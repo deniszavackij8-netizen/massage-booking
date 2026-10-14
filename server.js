@@ -9,6 +9,9 @@ const PORT = process.env.PORT || 3000;
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 
+const BOT_TOKEN = process.env.BOT_TOKEN || '';
+const CHAT_ID = process.env.CHAT_ID || '';
+
 const DATA_FILE = path.join(__dirname, 'data', 'bookings.json');
 
 // Рабочие часы салона — слоты с шагом в 1 час.
@@ -107,8 +110,8 @@ app.get('/api/slots', (req, res) => {
 });
 
 // POST /api/book  { name, phone, date, time }
-// Создаёт запись, если слот свободен, и сохраняет её в JSON.
-app.post('/api/book', (req, res) => {
+// Создаёт запись, если слот свободен, сохраняет её в JSON и шлёт уведомление в Telegram.
+app.post('/api/book', async (req, res) => {
   const { name, phone, date, time } = req.body || {};
 
   if (!name || !phone || !date || !time) {
@@ -142,8 +145,40 @@ app.post('/api/book', (req, res) => {
   bookings.push(booking);
   writeBookings(bookings);
 
+  try {
+    await sendTelegramNotification(booking);
+  } catch (err) {
+    // Запись уже сохранена и слот занят — ошибка Telegram не должна
+    // мешать клиенту увидеть успешную запись. Логируем для отладки.
+    console.error('Telegram: не удалось отправить уведомление —', err.message);
+  }
+
   res.json({ success: true, booking });
 });
+
+async function sendTelegramNotification(booking) {
+  if (!BOT_TOKEN || !CHAT_ID) {
+    console.warn('BOT_TOKEN/CHAT_ID не настроены — уведомление в Telegram пропущено.');
+    return;
+  }
+
+  const text =
+    `Новая запись! Имя: ${booking.name}, Телефон: ${booking.phone}, ` +
+    `Время: ${booking.date} ${booking.time}`;
+
+  const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: CHAT_ID, text })
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Telegram API ответил ошибкой: ${errText}`);
+  }
+}
 
 // ---------- защищённое API админ-панели ----------
 
@@ -178,5 +213,8 @@ app.listen(PORT, () => {
   console.log(`Админ-панель: http://localhost:${PORT}/admin`);
   if (!ADMIN_PASSWORD) {
     console.warn('Внимание: ADMIN_PASSWORD не задан в .env — админ-панель будет недоступна (503).');
+  }
+  if (!BOT_TOKEN || !CHAT_ID) {
+    console.warn('Внимание: BOT_TOKEN/CHAT_ID не заданы в .env — уведомления в Telegram работать не будут.');
   }
 });
