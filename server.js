@@ -27,6 +27,83 @@ const SLOTS = [
   '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'
 ];
 
+// Услуги и варианты длительности. Сетка времени — часовая, поэтому
+// длительность указывается в «слотах» (1 слот = 1 час). Для сеанса
+// 90 минут (массаж в 4 руки) резервируем 2 часовых слота — это проще
+// и надёжнее, чем дробить сетку на получасовые интервалы.
+const SERVICES = [
+  {
+    id: 'combo',
+    name: 'Общий массаж (комбинированный)',
+    durations: [
+      { minutes: 60, slots: 1, price: 100 },
+      { minutes: 120, slots: 2, price: 160 }
+    ]
+  },
+  {
+    id: 'full-body',
+    name: 'Массаж всего тела',
+    durations: [{ minutes: 60, slots: 1, price: 100 }]
+  },
+  {
+    id: 'anticellulite',
+    name: 'Антицеллюлитный массаж',
+    durations: [{ minutes: 60, slots: 1, price: 80 }]
+  },
+  {
+    id: 'sport',
+    name: 'Спортивный массаж',
+    durations: [{ minutes: 60, slots: 1, price: 130 }]
+  },
+  {
+    id: 'lymph',
+    name: 'Лимфодренажный массаж',
+    durations: [{ minutes: 60, slots: 1, price: 90 }]
+  },
+  {
+    id: 'four-hands',
+    name: 'Массаж в 4 руки',
+    durations: [
+      { minutes: 60, slots: 1, price: 160 },
+      { minutes: 90, slots: 2, price: 200 }
+    ]
+  },
+  {
+    id: 'neck',
+    name: 'Массаж ШВЗ',
+    durations: [{ minutes: 30, slots: 1, price: 30 }]
+  },
+  {
+    id: 'back',
+    name: 'Массаж спины',
+    durations: [{ minutes: 60, slots: 1, price: 70 }]
+  }
+];
+
+function findService(serviceId) {
+  return SERVICES.find((s) => s.id === serviceId) || null;
+}
+
+function findDuration(service, minutes) {
+  if (!service) return null;
+  return service.durations.find((d) => d.minutes === Number(minutes)) || null;
+}
+
+// Множество занятых индексов слотов для конкретной даты — с учётом того,
+// что одна запись может занимать несколько часовых слотов подряд.
+function occupiedSlotIndexes(dateBookings) {
+  const occupied = new Set();
+  dateBookings.forEach((b) => {
+    const startIndex = SLOTS.indexOf(b.time);
+    if (startIndex === -1) return;
+    const span = b.slotsCount || 1;
+    for (let i = startIndex; i < startIndex + span; i += 1) {
+      occupied.add(i);
+    }
+  });
+  return occupied;
+}
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -93,50 +170,88 @@ function basicAuth(req, res, next) {
 
 // ---------- публичное API ----------
 
-// GET /api/slots?date=YYYY-MM-DD
-// Возвращает список слотов на указанную дату с пометкой, какие уже заняты.
+// GET /api/services — список услуг с вариантами длительности и цен.
+app.get('/api/services', (req, res) => {
+  res.json({ services: SERVICES });
+});
+
+// GET /api/slots?date=YYYY-MM-DD&slots=1|2
+// Возвращает список слотов на указанную дату с пометкой, какие уже заняты
+// (с учётом того, сколько часовых слотов подряд нужно выбранной услуге).
 app.get('/api/slots', (req, res) => {
   const { date } = req.query;
+  const slotsNeeded = Math.max(1, Number(req.query.slots) || 1);
 
   if (!date || !isValidDate(date)) {
     return res.status(400).json({ error: 'Укажите корректную дату в формате YYYY-MM-DD' });
   }
 
   const bookings = readBookings();
-  const bookedTimes = new Set(
-    bookings.filter((b) => b.date === date).map((b) => b.time)
-  );
+  const dateBookings = bookings.filter((b) => b.date === date);
+  const occupied = occupiedSlotIndexes(dateBookings);
 
-  const slots = SLOTS.map((time) => ({
-    time,
-    booked: bookedTimes.has(time)
-  }));
+  const slots = SLOTS.map((time, index) => {
+    // Слот недоступен, если он сам занят, занят любой из следующих
+    // (slotsNeeded - 1) слотов, либо их просто не хватает до конца дня.
+    let booked = false;
+    if (index + slotsNeeded > SLOTS.length) {
+      booked = true;
+    } else {
+      for (let i = index; i < index + slotsNeeded; i += 1) {
+        if (occupied.has(i)) {
+          booked = true;
+          break;
+        }
+      }
+    }
+    return { time, booked };
+  });
 
   res.json({ date, slots });
 });
 
-// POST /api/book  { name, phone, date, time }
-// Создаёт запись, если слот свободен, сохраняет её в JSON и шлёт уведомление в Telegram.
+// POST /api/book  { name, phone, date, time, serviceId, durationMinutes }
+// Создаёт запись, если нужные слоты свободны, сохраняет её в JSON и шлёт уведомление в Telegram.
 app.post('/api/book', async (req, res) => {
-  const { name, phone, date, time } = req.body || {};
+  const { name, phone, date, time, serviceId, durationMinutes } = req.body || {};
 
-  if (!name || !phone || !date || !time) {
-    return res.status(400).json({ error: 'Заполните имя, телефон, дату и время' });
+  if (!name || !phone || !date || !time || !serviceId || !durationMinutes) {
+    return res.status(400).json({ error: 'Заполните имя, телефон, дату, время и выберите услугу' });
   }
   if (!isValidDate(date)) {
     return res.status(400).json({ error: 'Некорректная дата' });
   }
-  if (!SLOTS.includes(time)) {
+
+  const startIndex = SLOTS.indexOf(time);
+  if (startIndex === -1) {
     return res.status(400).json({ error: 'Некорректное время сеанса' });
   }
 
+  const service = findService(serviceId);
+  const duration = findService(serviceId) && findDuration(service, durationMinutes);
+  if (!service || !duration) {
+    return res.status(400).json({ error: 'Некорректная услуга или длительность' });
+  }
+
+  if (startIndex + duration.slots > SLOTS.length) {
+    return res.status(400).json({ error: 'Для такой длительности не хватает времени до конца рабочего дня. Выберите время пораньше.' });
+  }
+
   const bookings = readBookings();
+  const dateBookings = bookings.filter((b) => b.date === date);
+  const occupied = occupiedSlotIndexes(dateBookings);
 
   // Повторная проверка на сервере — главная защита от двойной записи.
   // Проверки на фронтенде можно обойти, поэтому финальное решение всегда здесь.
-  const alreadyTaken = bookings.some((b) => b.date === date && b.time === time);
+  let alreadyTaken = false;
+  for (let i = startIndex; i < startIndex + duration.slots; i += 1) {
+    if (occupied.has(i)) {
+      alreadyTaken = true;
+      break;
+    }
+  }
   if (alreadyTaken) {
-    return res.status(409).json({ error: 'Это время уже занято. Выберите другое.' });
+    return res.status(409).json({ error: 'Это время (или часть выбранной длительности) уже занято. Выберите другое.' });
   }
 
   const booking = {
@@ -145,6 +260,11 @@ app.post('/api/book', async (req, res) => {
     phone: String(phone).trim().slice(0, 40),
     date,
     time,
+    serviceId: service.id,
+    serviceName: service.name,
+    durationMinutes: duration.minutes,
+    slotsCount: duration.slots,
+    price: duration.price,
     createdAt: new Date().toISOString()
   };
 
@@ -168,9 +288,13 @@ async function sendTelegramNotification(booking) {
     return;
   }
 
+  const serviceLine = booking.serviceName
+    ? `, Услуга: ${booking.serviceName} (${booking.durationMinutes} мин, ${booking.price}₾)`
+    : '';
+
   const text =
     `Новая запись! Имя: ${booking.name}, Телефон: ${booking.phone}, ` +
-    `Время: ${booking.date} ${booking.time}`;
+    `Время: ${booking.date} ${booking.time}${serviceLine}`;
 
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
 
