@@ -69,6 +69,7 @@
         <tr>
           <th>Дата</th>
           <th>Время</th>
+          <th>Услуга</th>
           <th>Имя</th>
           <th>Телефон</th>
           <th>Создано</th>
@@ -118,10 +119,15 @@
 
     bodyEl.innerHTML = '';
     list.forEach(function(b){
+      var serviceCell = b.serviceName
+        ? escapeHtml(b.serviceName) + '<br><span style="color:var(--fg-muted); font-size:.82rem;">' +
+          (b.durationMinutes || '') + ' мин' + (b.price ? ', ' + b.price + '₾' : '') + '</span>'
+        : '<span style="color:var(--fg-muted);">—</span>';
       var tr = document.createElement('tr');
       tr.innerHTML =
         '<td>' + b.date + '</td>' +
         '<td>' + b.time + '</td>' +
+        '<td>' + serviceCell + '</td>' +
         '<td>' + escapeHtml(b.name) + '</td>' +
         '<td><a class="phone-link" href="tel:' + encodeURIComponent(b.phone) + '">' + escapeHtml(b.phone) + '</a></td>' +
         '<td>' + fmtCreated(b.createdAt) + '</td>' +
