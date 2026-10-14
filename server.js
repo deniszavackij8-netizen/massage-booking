@@ -10,7 +10,13 @@ const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
-const CHAT_ID = process.env.CHAT_ID || '';
+
+// Можно указать несколько получателей через запятую, например:
+// CHAT_ID=5682114269,111222333
+const CHAT_IDS = (process.env.CHAT_ID || '')
+  .split(',')
+  .map((id) => id.trim())
+  .filter(Boolean);
 
 const DATA_FILE = path.join(__dirname, 'data', 'bookings.json');
 
@@ -157,7 +163,7 @@ app.post('/api/book', async (req, res) => {
 });
 
 async function sendTelegramNotification(booking) {
-  if (!BOT_TOKEN || !CHAT_ID) {
+  if (!BOT_TOKEN || CHAT_IDS.length === 0) {
     console.warn('BOT_TOKEN/CHAT_ID не настроены — уведомление в Telegram пропущено.');
     return;
   }
@@ -168,15 +174,30 @@ async function sendTelegramNotification(booking) {
 
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: CHAT_ID, text })
-  });
+  // Отправляем каждому получателю отдельно. Если один из адресов
+  // ошибётся (например, человек ещё не написал боту), это не должно
+  // помешать отправке остальным — поэтому ошибки собираем, а не прерываем цикл.
+  const errors = [];
 
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Telegram API ответил ошибкой: ${errText}`);
+  for (const chatId of CHAT_IDS) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text })
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        errors.push(`chat_id ${chatId}: ${errText}`);
+      }
+    } catch (err) {
+      errors.push(`chat_id ${chatId}: ${err.message}`);
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new Error(`Telegram API ответил ошибкой для части получателей — ${errors.join(' | ')}`);
   }
 }
 
@@ -214,7 +235,7 @@ app.listen(PORT, () => {
   if (!ADMIN_PASSWORD) {
     console.warn('Внимание: ADMIN_PASSWORD не задан в .env — админ-панель будет недоступна (503).');
   }
-  if (!BOT_TOKEN || !CHAT_ID) {
+  if (!BOT_TOKEN || CHAT_IDS.length === 0) {
     console.warn('Внимание: BOT_TOKEN/CHAT_ID не заданы в .env — уведомления в Telegram работать не будут.');
   }
 });
