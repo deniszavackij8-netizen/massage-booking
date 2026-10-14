@@ -89,6 +89,36 @@
     background:#fff; color:var(--fg);
   }
   .field input:focus{outline:2px solid var(--brand-soft); outline-offset:1px;}
+  .field select{
+    border:1px solid var(--line); border-radius:12px; padding:12px 14px; font:inherit;
+    background:#fff; color:var(--fg);
+  }
+  .field select:focus{outline:2px solid var(--brand-soft); outline-offset:1px;}
+  .duration-options{display:flex; gap:10px; flex-wrap:wrap;}
+  .duration-opt{
+    border:1px solid var(--line); background:#fff; border-radius:12px; padding:10px 14px;
+    font:inherit; font-weight:700; font-size:.88rem; cursor:pointer; color:var(--fg);
+  }
+  .duration-opt:hover{border-color:var(--brand-soft); color:var(--brand);}
+  .duration-opt.duration-selected{background:var(--brand); border-color:var(--brand); color:#fff;}
+
+  .booking-summary{
+    background:var(--sand-100); border:1px dashed var(--brand-soft); border-radius:16px;
+    padding:16px 18px; margin:18px 0; display:grid; gap:6px; font-size:.92rem;
+  }
+  .booking-summary .summary-title{font-weight:800; color:var(--brand); font-size:.82rem; text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px;}
+  .booking-summary .summary-row{display:flex; justify-content:space-between; gap:12px;}
+  .booking-summary .summary-row span:first-child{color:var(--fg-muted);}
+  .booking-summary .summary-row b{text-align:right;}
+
+  .btn-confirm{
+    width:100%; margin-top:6px; padding:16px 22px; font-size:1.02rem;
+    background:linear-gradient(135deg, var(--accent), #d9a06b);
+    box-shadow:0 10px 28px -8px rgba(192,138,92,.6);
+    border:none; color:#fff;
+  }
+  .btn-confirm:hover:not(:disabled){transform:translateY(-1px); box-shadow:0 14px 32px -8px rgba(192,138,92,.7);}
+  .btn-confirm:disabled{background:var(--sand-200); color:#a89d8c; box-shadow:none; cursor:not-allowed;}
   .slots-label{font-size:.85rem; font-weight:700; color:var(--fg-muted); margin-bottom:10px; display:block;}
   .slots-grid{display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; min-height:52px;}
   .slot-btn{
@@ -181,6 +211,16 @@
           <input id="bookPhone" name="phone" type="tel" placeholder="+995 5xx xx xx xx" required maxlength="40">
         </div>
         <div class="field">
+          <label for="bookService">Услуга</label>
+          <select id="bookService" name="service" required>
+            <option value="" disabled selected>Выберите услугу</option>
+          </select>
+        </div>
+        <div class="field" id="durationField" hidden>
+          <span class="slots-label">Длительность</span>
+          <div class="duration-options" id="durationOptions"></div>
+        </div>
+        <div class="field">
           <label for="bookDate">Дата сеанса</label>
           <input id="bookDate" name="date" type="date" required>
         </div>
@@ -190,7 +230,8 @@
             <p class="slots-loading">Загрузка расписания…</p>
           </div>
         </div>
-        <button type="submit" class="btn btn-primary" style="width:100%; margin-top:6px;">Записаться</button>
+        <div class="booking-summary" id="bookingSummary" hidden></div>
+        <button type="submit" class="btn btn-confirm" id="confirmBtn" disabled>Выберите услугу, дату и время</button>
         <p class="booking-status" id="bookingStatus"></p>
       </form>
 
@@ -230,7 +271,39 @@
   var slotsGrid = document.getElementById('slotsGrid');
   var form = document.getElementById('bookingForm');
   var statusEl = document.getElementById('bookingStatus');
+  var serviceSelect = document.getElementById('bookService');
+  var durationField = document.getElementById('durationField');
+  var durationOptions = document.getElementById('durationOptions');
   var selectedTime = null;
+  var services = [];
+  var selectedService = null;
+  var selectedDuration = null;
+  var summaryEl = document.getElementById('bookingSummary');
+  var confirmBtn = document.getElementById('confirmBtn');
+
+  function updateSummary(){
+    var date = dateInput.value;
+    var ready = selectedService && selectedDuration && date && selectedTime;
+
+    if (!ready){
+      summaryEl.hidden = true;
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Выберите услугу, дату и время';
+      return;
+    }
+
+    summaryEl.hidden = false;
+    summaryEl.innerHTML =
+      '<div class="summary-title">Проверьте запись</div>' +
+      '<div class="summary-row"><span>Услуга</span><b>' + selectedService.name + '</b></div>' +
+      '<div class="summary-row"><span>Длительность</span><b>' + selectedDuration.minutes + ' мин</b></div>' +
+      '<div class="summary-row"><span>Дата</span><b>' + date + '</b></div>' +
+      '<div class="summary-row"><span>Время</span><b>' + selectedTime + '</b></div>' +
+      '<div class="summary-row"><span>Стоимость</span><b>' + selectedDuration.price + '₾</b></div>';
+
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = 'Подтвердить запись — ' + selectedDuration.price + '₾';
+  }
 
   function todayStr(){
     var d = new Date();
@@ -242,6 +315,69 @@
   dateInput.min = todayStr();
   dateInput.value = todayStr();
 
+  // ---------- услуги и длительность ----------
+  function renderDurationOptions(service){
+    durationOptions.innerHTML = '';
+    selectedDuration = null;
+
+    if (!service || service.durations.length === 0){
+      durationField.hidden = true;
+      return;
+    }
+
+    durationField.hidden = false;
+
+    service.durations.forEach(function(d, i){
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'duration-opt';
+      btn.textContent = d.minutes + ' мин — ' + d.price + '₾';
+      btn.addEventListener('click', function(){
+        durationOptions.querySelectorAll('.duration-opt').forEach(function(b){ b.classList.remove('duration-selected'); });
+        btn.classList.add('duration-selected');
+        selectedDuration = d;
+        loadSlots(dateInput.value);
+        updateSummary();
+      });
+      durationOptions.appendChild(btn);
+      // Если вариант длительности один — выбираем его сразу.
+      if (service.durations.length === 1){
+        btn.classList.add('duration-selected');
+        selectedDuration = d;
+      }
+    });
+  }
+
+  function loadServices(){
+    fetch('/api/services')
+      .then(function(res){ return res.json(); })
+      .then(function(data){
+        services = data.services || [];
+        services.forEach(function(s){
+          var opt = document.createElement('option');
+          opt.value = s.id;
+          opt.textContent = s.name;
+          serviceSelect.appendChild(opt);
+        });
+      })
+      .catch(function(){
+        var opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'Не удалось загрузить услуги';
+        serviceSelect.appendChild(opt);
+      });
+  }
+
+  serviceSelect.addEventListener('change', function(){
+    selectedService = services.find(function(s){ return s.id === serviceSelect.value; }) || null;
+    renderDurationOptions(selectedService);
+    loadSlots(dateInput.value);
+    updateSummary();
+  });
+
+  loadServices();
+
+  // ---------- слоты времени ----------
   function renderSlots(slots){
     slotsGrid.innerHTML = '';
     selectedTime = null;
@@ -255,6 +391,7 @@
         slotsGrid.querySelectorAll('.slot-btn').forEach(function(b){ b.classList.remove('slot-selected'); });
         btn.classList.add('slot-selected');
         selectedTime = slot.time;
+        updateSummary();
       });
       slotsGrid.appendChild(btn);
     });
@@ -263,7 +400,9 @@
   function loadSlots(date){
     slotsGrid.innerHTML = '<p class="slots-loading">Загрузка расписания…</p>';
     selectedTime = null;
-    fetch('/api/slots?date=' + encodeURIComponent(date))
+    updateSummary();
+    var slotsNeeded = selectedDuration ? selectedDuration.slots : 1;
+    fetch('/api/slots?date=' + encodeURIComponent(date) + '&slots=' + slotsNeeded)
       .then(function(res){ return res.json(); })
       .then(function(data){ renderSlots(data.slots || []); })
       .catch(function(){
@@ -271,8 +410,9 @@
       });
   }
 
-  dateInput.addEventListener('change', function(){ loadSlots(dateInput.value); });
+  dateInput.addEventListener('change', function(){ loadSlots(dateInput.value); updateSummary(); });
   loadSlots(dateInput.value);
+  updateSummary();
 
   form.addEventListener('submit', function(e){
     e.preventDefault();
@@ -288,20 +428,36 @@
       statusEl.classList.add('error');
       return;
     }
+    if (!selectedService){
+      statusEl.textContent = 'Выберите услугу.';
+      statusEl.classList.add('error');
+      return;
+    }
+    if (!selectedDuration){
+      statusEl.textContent = 'Выберите длительность.';
+      statusEl.classList.add('error');
+      return;
+    }
     if (!selectedTime){
       statusEl.textContent = 'Выберите время сеанса.';
       statusEl.classList.add('error');
       return;
     }
 
-    var submitBtn = form.querySelector('button[type="submit"]');
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Отправляем…';
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Отправляем…';
 
     fetch('/api/book', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name, phone: phone, date: date, time: selectedTime })
+      body: JSON.stringify({
+        name: name,
+        phone: phone,
+        date: date,
+        time: selectedTime,
+        serviceId: selectedService.id,
+        durationMinutes: selectedDuration.minutes
+      })
     })
       .then(function(res){ return res.json().then(function(data){ return { ok: res.ok, data: data }; }); })
       .then(function(result){
@@ -310,11 +466,17 @@
           statusEl.classList.add('error');
           loadSlots(date);
         } else {
-          statusEl.textContent = 'Готово! Вы записаны на ' + date + ' в ' + selectedTime + '. Мы свяжемся для подтверждения.';
+          statusEl.textContent = 'Готово! Вы записаны на ' + date + ' в ' + selectedTime +
+            ' (' + selectedService.name + ', ' + selectedDuration.minutes + ' мин). Мы свяжемся для подтверждения.';
           statusEl.classList.add('success');
           form.reset();
           dateInput.value = date;
+          selectedService = null;
+          selectedDuration = null;
+          durationField.hidden = true;
+          durationOptions.innerHTML = '';
           loadSlots(date);
+          updateSummary();
         }
       })
       .catch(function(){
@@ -322,8 +484,12 @@
         statusEl.classList.add('error');
       })
       .finally(function(){
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Записаться';
+        confirmBtn.disabled = false;
+        if (selectedService && selectedDuration && selectedTime){
+          updateSummary();
+        } else {
+          confirmBtn.textContent = 'Выберите услугу, дату и время';
+        }
       });
   });
 </script>
