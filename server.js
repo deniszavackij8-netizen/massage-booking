@@ -19,6 +19,7 @@ const CHAT_IDS = (process.env.CHAT_ID || '')
   .filter(Boolean);
 
 const DATA_FILE = path.join(__dirname, 'data', 'bookings.json');
+const BLOCKS_FILE = path.join(__dirname, 'data', 'blocks.json');
 
 // Рабочие часы салона — слоты с шагом в 1 час.
 // Поменяйте список, если часы работы другие.
@@ -104,6 +105,26 @@ function occupiedSlotIndexes(dateBookings) {
   return occupied;
 }
 
+// Блокировки от администратора: либо весь день (time === null),
+// либо конкретные часы (time — строка из SLOTS).
+function blocksForDate(allBlocks, date) {
+  return allBlocks.filter((b) => b.date === date);
+}
+
+function isDayBlocked(dateBlocks) {
+  return dateBlocks.some((b) => b.time === null);
+}
+
+function blockedSlotIndexes(dateBlocks) {
+  const blocked = new Set();
+  dateBlocks.forEach((b) => {
+    if (b.time === null) return; // весь день обрабатывается отдельно
+    const idx = SLOTS.indexOf(b.time);
+    if (idx !== -1) blocked.add(idx);
+  });
+  return blocked;
+}
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -121,6 +142,20 @@ function readBookings() {
 
 function writeBookings(bookings) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(bookings, null, 2), 'utf8');
+}
+
+function readBlocks() {
+  try {
+    const raw = fs.readFileSync(BLOCKS_FILE, 'utf8');
+    const data = JSON.parse(raw);
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function writeBlocks(blocks) {
+  fs.writeFileSync(BLOCKS_FILE, JSON.stringify(blocks, null, 2), 'utf8');
 }
 
 function isValidDate(value) {
@@ -190,15 +225,23 @@ app.get('/api/slots', (req, res) => {
   const dateBookings = bookings.filter((b) => b.date === date);
   const occupied = occupiedSlotIndexes(dateBookings);
 
+  const allBlocks = readBlocks();
+  const dateBlocks = blocksForDate(allBlocks, date);
+  const dayBlocked = isDayBlocked(dateBlocks);
+  const blockedByAdmin = blockedSlotIndexes(dateBlocks);
+
   const slots = SLOTS.map((time, index) => {
-    // Слот недоступен, если он сам занят, занят любой из следующих
-    // (slotsNeeded - 1) слотов, либо их просто не хватает до конца дня.
+    // Слот недоступен, если: весь день заблокирован администратором,
+    // он сам (или любой из следующих slotsNeeded-1) занят записью или
+    // заблокирован вручную, либо слотов просто не хватает до конца дня.
     let booked = false;
-    if (index + slotsNeeded > SLOTS.length) {
+    if (dayBlocked) {
+      booked = true;
+    } else if (index + slotsNeeded > SLOTS.length) {
       booked = true;
     } else {
       for (let i = index; i < index + slotsNeeded; i += 1) {
-        if (occupied.has(i)) {
+        if (occupied.has(i) || blockedByAdmin.has(i)) {
           booked = true;
           break;
         }
@@ -207,7 +250,7 @@ app.get('/api/slots', (req, res) => {
     return { time, booked };
   });
 
-  res.json({ date, slots });
+  res.json({ date, slots, dayBlocked });
 });
 
 // POST /api/book  { name, phone, date, time, serviceId, durationMinutes }
@@ -237,21 +280,28 @@ app.post('/api/book', async (req, res) => {
     return res.status(400).json({ error: 'Для такой длительности не хватает времени до конца рабочего дня. Выберите время пораньше.' });
   }
 
+  const allBlocks = readBlocks();
+  const dateBlocks = blocksForDate(allBlocks, date);
+  if (isDayBlocked(dateBlocks)) {
+    return res.status(409).json({ error: 'В этот день запись закрыта. Выберите другую дату.' });
+  }
+  const blockedByAdmin = blockedSlotIndexes(dateBlocks);
+
   const bookings = readBookings();
   const dateBookings = bookings.filter((b) => b.date === date);
   const occupied = occupiedSlotIndexes(dateBookings);
 
-  // Повторная проверка на сервере — главная защита от двойной записи.
-  // Проверки на фронтенде можно обойти, поэтому финальное решение всегда здесь.
+  // Повторная проверка на сервере — главная защита от двойной записи
+  // и от записи на заблокированное администратором время.
   let alreadyTaken = false;
   for (let i = startIndex; i < startIndex + duration.slots; i += 1) {
-    if (occupied.has(i)) {
+    if (occupied.has(i) || blockedByAdmin.has(i)) {
       alreadyTaken = true;
       break;
     }
   }
   if (alreadyTaken) {
-    return res.status(409).json({ error: 'Это время (или часть выбранной длительности) уже занято. Выберите другое.' });
+    return res.status(409).json({ error: 'Это время (или часть выбранной длительности) уже занято или заблокировано. Выберите другое.' });
   }
 
   const booking = {
@@ -347,6 +397,71 @@ app.delete('/api/admin/bookings/:id', basicAuth, (req, res) => {
   }
 
   writeBookings(next);
+  res.json({ success: true });
+});
+
+// GET /api/admin/blocks — список всех блокировок (весь день или отдельные часы).
+app.get('/api/admin/blocks', basicAuth, (req, res) => {
+  const blocks = readBlocks();
+  const sorted = [...blocks].sort((a, b) => {
+    if (a.date === b.date) {
+      // Блокировка всего дня (time === null) показывается первой.
+      if (a.time === b.time) return 0;
+      if (a.time === null) return -1;
+      if (b.time === null) return 1;
+      return a.time.localeCompare(b.time);
+    }
+    return a.date.localeCompare(b.date);
+  });
+  res.json({ blocks: sorted });
+});
+
+// POST /api/admin/blocks  { date, time, note }
+// time: конкретный час из SLOTS, или null/отсутствует — заблокировать весь день.
+app.post('/api/admin/blocks', basicAuth, (req, res) => {
+  const { date, time, note } = req.body || {};
+
+  if (!date || !isValidDate(date)) {
+    return res.status(400).json({ error: 'Укажите корректную дату' });
+  }
+
+  const normalizedTime = time ? String(time) : null;
+  if (normalizedTime !== null && !SLOTS.includes(normalizedTime)) {
+    return res.status(400).json({ error: 'Некорректное время. Оставьте поле пустым, чтобы заблокировать весь день.' });
+  }
+
+  const blocks = readBlocks();
+
+  // Не даём создать точный дубликат (та же дата + то же время/весь день).
+  const duplicate = blocks.some((b) => b.date === date && b.time === normalizedTime);
+  if (duplicate) {
+    return res.status(409).json({ error: 'Такая блокировка уже существует.' });
+  }
+
+  const block = {
+    id: Date.now().toString(),
+    date,
+    time: normalizedTime,
+    note: note ? String(note).trim().slice(0, 200) : '',
+    createdAt: new Date().toISOString()
+  };
+
+  blocks.push(block);
+  writeBlocks(blocks);
+
+  res.json({ success: true, block });
+});
+
+// DELETE /api/admin/blocks/:id — снять блокировку.
+app.delete('/api/admin/blocks/:id', basicAuth, (req, res) => {
+  const blocks = readBlocks();
+  const next = blocks.filter((b) => b.id !== req.params.id);
+
+  if (next.length === blocks.length) {
+    return res.status(404).json({ error: 'Блокировка не найдена' });
+  }
+
+  writeBlocks(next);
   res.json({ success: true });
 });
 
