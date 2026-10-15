@@ -1,6 +1,5 @@
 require('dotenv').config();
 const express = require('express');
-const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
@@ -38,8 +37,17 @@ const CHAT_IDS = (process.env.CHAT_ID || '')
   .map((id) => id.trim())
   .filter(Boolean);
 
-const DATA_FILE = path.join(__dirname, 'data', 'bookings.json');
-const BLOCKS_FILE = path.join(__dirname, 'data', 'blocks.json');
+// Хранилище: база данных (если задан DATABASE_URL) или JSON-файлы.
+const { createStore, normalizePhone } = require('./storage');
+const DATABASE_URL = (process.env.DATABASE_URL || '').trim();
+const store = createStore(DATABASE_URL);
+
+// Express 4 не ловит ошибки из async-обработчиков сам — без этой обёртки
+// упавший запрос к базе повис бы без ответа. Передаём ошибку дальше,
+// в общий обработчик ошибок внизу файла.
+function asyncHandler(fn) {
+  return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+}
 
 // Рабочие часы салона — слоты с шагом в 1 час.
 // Поменяйте список, если часы работы другие.
@@ -127,10 +135,6 @@ function occupiedSlotIndexes(dateBookings) {
 
 // Блокировки от администратора: либо весь день (time === null),
 // либо конкретные часы (time — строка из SLOTS).
-function blocksForDate(allBlocks, date) {
-  return allBlocks.filter((b) => b.date === date);
-}
-
 function isDayBlocked(dateBlocks) {
   return dateBlocks.some((b) => b.time === null);
 }
@@ -194,12 +198,8 @@ function isDateTooFar(date, salonNow) {
   return date > limit;
 }
 
-// Номер телефона «как ключ»: только цифры, чтобы "+995 555 12 34 56"
-// и "995555123456" считались одним и тем же номером.
-function normalizePhone(phone) {
-  return String(phone || '').replace(/\D/g, '');
-}
-
+// Номер телефона сравниваем только по цифрам (normalizePhone из storage.js),
+// чтобы "+995 555 12 34 56" и "995555123456" считались одним номером.
 const MAX_ACTIVE_BOOKINGS_PER_PHONE = 3;
 
 // Предохранитель на весь сайт: не больше 20 новых записей в час от всех
@@ -260,48 +260,8 @@ app.use((err, req, res, next) => {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ---------- работа с «базой» (JSON-файл) ----------
-
-function readBookings() {
-  try {
-    const raw = fs.readFileSync(DATA_FILE, 'utf8');
-    const data = JSON.parse(raw);
-    return Array.isArray(data) ? data : [];
-  } catch (err) {
-    return [];
-  }
-}
-
-// Атомарная запись: сначала пишем во временный файл, потом переименовываем.
-// Если сервер упадёт посреди записи, старый файл останется целым — иначе
-// получился бы обрезанный JSON, который читается как пустой список, и при
-// следующей записи все существующие записи были бы молча стёрты.
-function writeJsonAtomic(file, data) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8');
-  fs.renameSync(tmp, file);
-}
-
-function writeBookings(bookings) {
-  writeJsonAtomic(DATA_FILE, bookings);
-}
-
-function readBlocks() {
-  try {
-    const raw = fs.readFileSync(BLOCKS_FILE, 'utf8');
-    const data = JSON.parse(raw);
-    return Array.isArray(data) ? data : [];
-  } catch (err) {
-    return [];
-  }
-}
-
-function writeBlocks(blocks) {
-  writeJsonAtomic(BLOCKS_FILE, blocks);
-}
-
 function isValidDate(value) {
+  if (typeof value !== 'string') return false; // ?date=a&date=b приходит массивом
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) return false;
 
@@ -535,7 +495,7 @@ app.get('/api/services', (req, res) => {
 // GET /api/slots?date=YYYY-MM-DD&slots=1|2
 // Возвращает список слотов на указанную дату с пометкой, какие уже заняты
 // (с учётом того, сколько часовых слотов подряд нужно выбранной услуге).
-app.get('/api/slots', slotsLimiter, (req, res) => {
+app.get('/api/slots', slotsLimiter, asyncHandler(async (req, res) => {
   const { date } = req.query;
   const slotsNeeded = Math.min(4, Math.max(1, Math.floor(Number(req.query.slots)) || 1));
 
@@ -543,12 +503,11 @@ app.get('/api/slots', slotsLimiter, (req, res) => {
     return res.status(400).json({ error: 'Укажите корректную дату в формате YYYY-MM-DD' });
   }
 
-  const bookings = readBookings();
-  const dateBookings = bookings.filter((b) => b.date === date);
+  const [dateBookings, dateBlocks] = await Promise.all([
+    store.bookingsForDate(date),
+    store.blocksForDate(date)
+  ]);
   const occupied = occupiedSlotIndexes(dateBookings);
-
-  const allBlocks = readBlocks();
-  const dateBlocks = blocksForDate(allBlocks, date);
   const dayBlocked = isDayBlocked(dateBlocks);
   const blockedByAdmin = blockedSlotIndexes(dateBlocks);
   const salonNow = getSalonNow();
@@ -576,12 +535,12 @@ app.get('/api/slots', slotsLimiter, (req, res) => {
     return { time, booked };
   });
 
-  res.json({ date, slots, dayBlocked });
-});
+  return res.json({ date, slots, dayBlocked });
+}));
 
 // POST /api/book  { name, phone, date, time, serviceId, durationMinutes }
 // Создаёт запись, если нужные слоты свободны, сохраняет её в JSON и шлёт уведомление в Telegram.
-app.post('/api/book', bookLimiter, async (req, res) => {
+app.post('/api/book', bookLimiter, asyncHandler(async (req, res) => {
   const { name, phone, date, time, serviceId, durationMinutes, website } = req.body || {};
 
   // «Ловушка для ботов» (honeypot): поле website спрятано от людей на
@@ -623,71 +582,70 @@ app.post('/api/book', bookLimiter, async (req, res) => {
     return res.status(400).json({ error: 'Для такой длительности не хватает времени до конца рабочего дня. Выберите время пораньше.' });
   }
 
-  const allBlocks = readBlocks();
-  const dateBlocks = blocksForDate(allBlocks, date);
-  if (isDayBlocked(dateBlocks)) {
-    return res.status(409).json({ error: 'В этот день запись закрыта. Выберите другую дату.' });
-  }
   if (isSlotTooSoon(date, time, getSalonNow())) {
     return res.status(409).json({ error: 'Это время уже прошло или наступает меньше чем через час. Выберите другое время.' });
   }
-  const blockedByAdmin = blockedSlotIndexes(dateBlocks);
 
-  const bookings = readBookings();
-  const dateBookings = bookings.filter((b) => b.date === date);
-  const occupied = occupiedSlotIndexes(dateBookings);
+  // Проверка свободного времени и сохранение — внутри «замка» на дату:
+  // пока идёт эта запись, вторая запись на тот же день ждёт своей очереди,
+  // поэтому два человека физически не могут занять одно и то же время.
+  const result = await store.withBookingLock(date, phone, async (tx) => {
+    const [dateBlocks, dateBookings] = await Promise.all([tx.blocksForDate(), tx.bookingsForDate()]);
 
-  // Повторная проверка на сервере — главная защита от двойной записи
-  // и от записи на заблокированное администратором время.
-  let alreadyTaken = false;
-  for (let i = startIndex; i < startIndex + duration.slots; i += 1) {
-    if (occupied.has(i) || blockedByAdmin.has(i)) {
-      alreadyTaken = true;
-      break;
+    if (isDayBlocked(dateBlocks)) {
+      return { status: 409, error: 'В этот день запись закрыта. Выберите другую дату.' };
     }
-  }
-  if (alreadyTaken) {
-    return res.status(409).json({ error: 'Это время (или часть выбранной длительности) уже занято или заблокировано. Выберите другое.' });
+
+    const blockedByAdmin = blockedSlotIndexes(dateBlocks);
+    const occupied = occupiedSlotIndexes(dateBookings);
+    for (let i = startIndex; i < startIndex + duration.slots; i += 1) {
+      if (occupied.has(i) || blockedByAdmin.has(i)) {
+        return { status: 409, error: 'Это время (или часть выбранной длительности) уже занято или заблокировано. Выберите другое.' };
+      }
+    }
+
+    // Не больше MAX_ACTIVE_BOOKINGS_PER_PHONE будущих записей на один номер —
+    // чтобы один человек/бот не мог занять полрасписания на свой телефон.
+    const activeForPhone = await tx.countActiveForPhone(getSalonNow().date);
+    if (activeForPhone >= MAX_ACTIVE_BOOKINGS_PER_PHONE) {
+      return {
+        status: 409,
+        error: 'На этот номер уже есть несколько активных записей. Для новой записи свяжитесь с нами в WhatsApp или Telegram.'
+      };
+    }
+
+    // Общий «предохранитель» от ботнета: если за последний час со всего
+    // интернета пришло подозрительно много записей — новые временно не
+    // принимаем и предупреждаем владельца в Telegram.
+    if (!globalBookingGuardAllows()) {
+      return {
+        status: 429,
+        error: 'Онлайн-запись временно перегружена. Пожалуйста, напишите нам в WhatsApp или Telegram.'
+      };
+    }
+
+    const newBooking = {
+      id: crypto.randomUUID(),
+      name: String(name).trim().slice(0, 120),
+      phone: String(phone).trim().slice(0, 40),
+      date,
+      time,
+      serviceId: service.id,
+      serviceName: service.name,
+      durationMinutes: duration.minutes,
+      slotsCount: duration.slots,
+      price: duration.price,
+      createdAt: new Date().toISOString()
+    };
+    await tx.insertBooking(newBooking);
+    return { booking: newBooking };
+  });
+
+  if (result.error) {
+    return res.status(result.status).json({ error: result.error });
   }
 
-  // Не больше MAX_ACTIVE_BOOKINGS_PER_PHONE будущих записей на один номер —
-  // чтобы один человек/бот не мог занять полрасписания на свой телефон.
-  const phoneKey = normalizePhone(phone);
-  const salonNowForCount = getSalonNow();
-  const activeForPhone = bookings.filter(
-    (b) => normalizePhone(b.phone) === phoneKey && b.date >= salonNowForCount.date
-  ).length;
-  if (activeForPhone >= MAX_ACTIVE_BOOKINGS_PER_PHONE) {
-    return res.status(409).json({
-      error: 'На этот номер уже есть несколько активных записей. Для новой записи свяжитесь с нами в WhatsApp или Telegram.'
-    });
-  }
-
-  // Общий «предохранитель» от ботнета: если за последний час со всего
-  // интернета пришло подозрительно много записей — новые временно не
-  // принимаем и предупреждаем владельца в Telegram.
-  if (!globalBookingGuardAllows()) {
-    return res.status(429).json({
-      error: 'Онлайн-запись временно перегружена. Пожалуйста, напишите нам в WhatsApp или Telegram.'
-    });
-  }
-
-  const booking = {
-    id: crypto.randomUUID(),
-    name: String(name).trim().slice(0, 120),
-    phone: String(phone).trim().slice(0, 40),
-    date,
-    time,
-    serviceId: service.id,
-    serviceName: service.name,
-    durationMinutes: duration.minutes,
-    slotsCount: duration.slots,
-    price: duration.price,
-    createdAt: new Date().toISOString()
-  };
-
-  bookings.push(booking);
-  writeBookings(bookings);
+  const { booking } = result;
   registerGlobalBooking();
 
   try {
@@ -698,8 +656,8 @@ app.post('/api/book', bookLimiter, async (req, res) => {
     console.error('Telegram: не удалось отправить уведомление —', err.message);
   }
 
-  res.json({ success: true, booking });
-});
+  return res.json({ success: true, booking });
+}));
 
 async function sendTelegramNotification(booking) {
   const serviceLine = booking.serviceName
@@ -754,47 +712,27 @@ async function sendTelegramText(text) {
 // ---------- защищённое API админ-панели ----------
 
 // GET /api/admin/bookings — список всех записей, новые сверху.
-app.get('/api/admin/bookings', basicAuth, (req, res) => {
-  const bookings = readBookings();
-  const sorted = [...bookings].sort((a, b) => {
-    if (a.date === b.date) return a.time.localeCompare(b.time);
-    return a.date.localeCompare(b.date);
-  });
-  res.json({ bookings: sorted });
-});
+app.get('/api/admin/bookings', basicAuth, asyncHandler(async (req, res) => {
+  res.json({ bookings: await store.allBookings() });
+}));
 
 // DELETE /api/admin/bookings/:id — отменить запись и освободить слот.
-app.delete('/api/admin/bookings/:id', basicAuth, (req, res) => {
-  const bookings = readBookings();
-  const next = bookings.filter((b) => b.id !== req.params.id);
-
-  if (next.length === bookings.length) {
+app.delete('/api/admin/bookings/:id', basicAuth, asyncHandler(async (req, res) => {
+  const deleted = await store.deleteBooking(String(req.params.id));
+  if (!deleted) {
     return res.status(404).json({ error: 'Запись не найдена' });
   }
-
-  writeBookings(next);
-  res.json({ success: true });
-});
+  return res.json({ success: true });
+}));
 
 // GET /api/admin/blocks — список всех блокировок (весь день или отдельные часы).
-app.get('/api/admin/blocks', basicAuth, (req, res) => {
-  const blocks = readBlocks();
-  const sorted = [...blocks].sort((a, b) => {
-    if (a.date === b.date) {
-      // Блокировка всего дня (time === null) показывается первой.
-      if (a.time === b.time) return 0;
-      if (a.time === null) return -1;
-      if (b.time === null) return 1;
-      return a.time.localeCompare(b.time);
-    }
-    return a.date.localeCompare(b.date);
-  });
-  res.json({ blocks: sorted });
-});
+app.get('/api/admin/blocks', basicAuth, asyncHandler(async (req, res) => {
+  res.json({ blocks: await store.allBlocks() });
+}));
 
 // POST /api/admin/blocks  { date, time, note }
 // time: конкретный час из SLOTS, или null/отсутствует — заблокировать весь день.
-app.post('/api/admin/blocks', basicAuth, (req, res) => {
+app.post('/api/admin/blocks', basicAuth, asyncHandler(async (req, res) => {
   const { date, time, note } = req.body || {};
 
   if (!date || !isValidDate(date)) {
@@ -809,40 +747,30 @@ app.post('/api/admin/blocks', basicAuth, (req, res) => {
     return res.status(400).json({ error: 'Некорректное время. Оставьте поле пустым, чтобы заблокировать весь день.' });
   }
 
-  const blocks = readBlocks();
-
-  // Не даём создать точный дубликат (та же дата + то же время/весь день).
-  const duplicate = blocks.some((b) => b.date === date && b.time === normalizedTime);
-  if (duplicate) {
-    return res.status(409).json({ error: 'Такая блокировка уже существует.' });
-  }
-
-  const block = {
+  // createBlock вернёт null, если точно такая блокировка (та же дата +
+  // то же время/весь день) уже есть — дубликаты не создаём.
+  const block = await store.createBlock({
     id: crypto.randomUUID(),
     date,
     time: normalizedTime,
     note: note ? String(note).trim().slice(0, 200) : '',
     createdAt: new Date().toISOString()
-  };
-
-  blocks.push(block);
-  writeBlocks(blocks);
-
-  res.json({ success: true, block });
-});
-
-// DELETE /api/admin/blocks/:id — снять блокировку.
-app.delete('/api/admin/blocks/:id', basicAuth, (req, res) => {
-  const blocks = readBlocks();
-  const next = blocks.filter((b) => b.id !== req.params.id);
-
-  if (next.length === blocks.length) {
-    return res.status(404).json({ error: 'Блокировка не найдена' });
+  });
+  if (!block) {
+    return res.status(409).json({ error: 'Такая блокировка уже существует.' });
   }
 
-  writeBlocks(next);
-  res.json({ success: true });
-});
+  return res.json({ success: true, block });
+}));
+
+// DELETE /api/admin/blocks/:id — снять блокировку.
+app.delete('/api/admin/blocks/:id', basicAuth, asyncHandler(async (req, res) => {
+  const deleted = await store.deleteBlock(String(req.params.id));
+  if (!deleted) {
+    return res.status(404).json({ error: 'Блокировка не найдена' });
+  }
+  return res.json({ success: true });
+}));
 
 // GET /api/admin/whoami — диагностика: какой IP сервер видит у вас.
 // Нужна, чтобы проверить настройку TRUST_PROXY: здесь должен быть ваш
@@ -866,13 +794,33 @@ app.use((err, req, res, next) => {
   return res.status(500).json({ error: 'Внутренняя ошибка сервера. Попробуйте позже.' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Сервер запущен: http://localhost:${PORT}`);
-  console.log(`Админ-панель: http://localhost:${PORT}/admin`);
-  if (!ADMIN_PASSWORD) {
-    console.warn('Внимание: ADMIN_PASSWORD не задан в .env — админ-панель будет недоступна (503).');
-  }
-  if (!BOT_TOKEN || CHAT_IDS.length === 0) {
-    console.warn('Внимание: BOT_TOKEN/CHAT_ID не заданы в .env — уведомления в Telegram работать не будут.');
-  }
-});
+// Сначала готовим хранилище (создаём таблицы в базе, если их ещё нет),
+// и только потом принимаем посетителей. Если база недоступна — сервер
+// не запускается: на Render тогда останется работать предыдущая версия
+// сайта, а в логах будет понятная причина.
+store.init()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Сервер запущен: http://localhost:${PORT}`);
+      console.log(`Админ-панель: http://localhost:${PORT}/admin`);
+      if (store.kind === 'postgres') {
+        console.log('Хранилище: база данных PostgreSQL (записи сохраняются надёжно).');
+      } else {
+        console.warn(
+          'Хранилище: JSON-файлы в папке data/. ВНИМАНИЕ: на бесплатном Render эти файлы ' +
+          'стираются при каждом обновлении и засыпании сервиса — задайте DATABASE_URL.'
+        );
+      }
+      if (!ADMIN_PASSWORD) {
+        console.warn('Внимание: ADMIN_PASSWORD не задан в .env — админ-панель будет недоступна (503).');
+      }
+      if (!BOT_TOKEN || CHAT_IDS.length === 0) {
+        console.warn('Внимание: BOT_TOKEN/CHAT_ID не заданы в .env — уведомления в Telegram работать не будут.');
+      }
+    });
+  })
+  .catch((err) => {
+    console.error('Не удалось подключиться к базе данных:', err.message);
+    console.error('Проверьте переменную DATABASE_URL в настройках (Environment) на Render.');
+    process.exit(1);
+  });
