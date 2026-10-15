@@ -2,9 +2,22 @@ require('dotenv').config();
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Не показываем в заголовках, что сервер на Express — чуть усложняет
+// автоматический сбор отпечатка стека для атакующего.
+app.disable('x-powered-by');
+
+// Если сервер стоит за реверс-прокси (nginx и т.п.), который сам
+// терминирует TLS, включите TRUST_PROXY=1 в .env, чтобы req.ip брал
+// настоящий IP клиента из X-Forwarded-For, а не IP самого прокси —
+// иначе блокировка по IP будет блокировать всех разом (или никого).
+if (process.env.TRUST_PROXY === '1') {
+  app.set('trust proxy', 1);
+}
 
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
@@ -164,7 +177,29 @@ function isSlotTooSoon(date, time, salonNow) {
   return timeToMinutes(time) < salonNow.minutes + MIN_LEAD_MINUTES;
 }
 
-app.use(express.json());
+// Ограничиваем размер тела запроса — защита от примитивного DoS
+// большими телами запроса и от переполнения диска логами/ошибками.
+app.use(express.json({ limit: '15kb' }));
+
+// Базовые защитные HTTP-заголовки (без установки отдельного пакета helmet,
+// чтобы не плодить лишние зависимости для небольшого проекта).
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer-when-downgrade');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  next();
+});
+
+// Некорректный JSON в теле запроса не должен приводить к утечке
+// внутреннего стека ошибок express — отвечаем аккуратным 400.
+app.use((err, req, res, next) => {
+  if (err && err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'Некорректный формат запроса' });
+  }
+  return next(err);
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------- работа с «базой» (JSON-файл) ----------
@@ -215,7 +250,136 @@ function isValidDate(value) {
   return day >= 1 && day <= daysInMonth[month - 1];
 }
 
-// ---------- защита админ-панели (HTTP Basic Auth) ----------
+// Имя: после обрезки пробелов — не пустое, разумная длина, без управляющих
+// символов (которые можно было бы вставить, чтобы сломать отображение/логи).
+function isValidName(value) {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (trimmed.length < 2 || trimmed.length > 120) return false;
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1f\x7f]/.test(trimmed)) return false;
+  return true;
+}
+
+// Телефон: разрешаем цифры, пробелы, +, -, (), не меньше 6 и не больше 20
+// значащих цифр — достаточно гибко для международных номеров и при этом
+// отсекает явный мусор/скрипты в этом поле.
+function isValidPhone(value) {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (trimmed.length > 40) return false;
+  if (!/^[0-9+()\-\s]+$/.test(trimmed)) return false;
+  const digitsOnly = trimmed.replace(/\D/g, '');
+  return digitsOnly.length >= 6 && digitsOnly.length <= 20;
+}
+
+// ---------- простая защита от спама: лимит запросов по IP ----------
+
+// Фабрика лимитера: скользящее окно на N запросов за M миллисекунд,
+// отдельный счётчик на каждый IP. Этого достаточно, чтобы бот не мог
+// в одну секунду занять спамом все слоты на месяц вперёд; для защиты
+// от действительно распределённых атак (много разных IP) нужен уже
+// внешний сервис (Cloudflare и т.п.), но это закрывает типовой случай.
+function createRateLimiter({ windowMs, max, message }) {
+  const hits = new Map(); // ip -> массив таймстампов запросов в текущем окне
+
+  setInterval(() => {
+    const cutoff = Date.now() - windowMs;
+    for (const [ip, timestamps] of hits.entries()) {
+      const fresh = timestamps.filter((t) => t > cutoff);
+      if (fresh.length === 0) hits.delete(ip);
+      else hits.set(ip, fresh);
+    }
+  }, Math.min(windowMs, 5 * 60 * 1000)).unref();
+
+  return (req, res, next) => {
+    const ip = req.ip || req.connection.remoteAddress || 'unknown';
+    const now = Date.now();
+    const cutoff = now - windowMs;
+    const timestamps = (hits.get(ip) || []).filter((t) => t > cutoff);
+
+    if (timestamps.length >= max) {
+      res.set('Retry-After', String(Math.ceil(windowMs / 1000)));
+      return res.status(429).json({ error: message });
+    }
+
+    timestamps.push(now);
+    hits.set(ip, timestamps);
+    return next();
+  };
+}
+
+// Бронирование: не больше 6 попыток записи за 15 минут с одного IP.
+const bookLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 6,
+  message: 'Слишком много попыток записи подряд. Подождите немного и попробуйте снова.'
+});
+
+// Общий лимит на чтение расписания — защита от массового сканирования
+// всех дат подряд ботом (не мешает обычному человеку листать календарь).
+const slotsLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: 'Слишком много запросов. Подождите немного.'
+});
+
+// ---------- защита админ-панели (HTTP Basic Auth + защита от перебора) ----------
+
+// Сравнение строк постоянного времени — обычное `===` даёт мизерную, но
+// измеримую разницу во времени в зависимости от того, на каком символе
+// нашлось несовпадение, и теоретически позволяет подбирать пароль по
+// одному символу через замеры времени ответа. crypto.timingSafeEqual
+// работает только для буферов одинаковой длины, поэтому для буферов
+// разной длины сравниваем против самого себя (чтобы не выдавать длину
+// таймингом) и честно возвращаем false.
+function timingSafeStringEqual(a, b) {
+  const bufA = Buffer.from(String(a), 'utf8');
+  const bufB = Buffer.from(String(b), 'utf8');
+  if (bufA.length !== bufB.length) {
+    crypto.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+// Защита от перебора пароля: 5 неудачных попыток подряд с одного IP —
+// и дальнейшие попытки блокируются на 20 минут. Храним счётчики в памяти
+// процесса (этого достаточно для одного небольшого сайта; при перезапуске
+// сервера счётчики сбрасываются — это осознанный компромисс простоты).
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_LOCKOUT_MS = 20 * 60 * 1000; // 20 минут
+
+const loginAttemptsByIp = new Map(); // ip -> { count, lockedUntil }
+
+function getLoginState(ip) {
+  return loginAttemptsByIp.get(ip) || { count: 0, lockedUntil: 0 };
+}
+
+function registerFailedLogin(ip) {
+  const state = getLoginState(ip);
+  state.count += 1;
+  if (state.count >= MAX_LOGIN_ATTEMPTS) {
+    state.lockedUntil = Date.now() + LOGIN_LOCKOUT_MS;
+    state.count = 0; // следующий отсчёт из 5 попыток начнётся после разблокировки
+  }
+  loginAttemptsByIp.set(ip, state);
+}
+
+function clearLoginAttempts(ip) {
+  loginAttemptsByIp.delete(ip);
+}
+
+// Периодически подчищаем карту, чтобы она не росла бесконечно от
+// случайных/разовых IP (боты, сканеры), у которых не было успешного входа.
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, state] of loginAttemptsByIp.entries()) {
+    if (state.lockedUntil && state.lockedUntil < now && state.count === 0) {
+      loginAttemptsByIp.delete(ip);
+    }
+  }
+}, 10 * 60 * 1000).unref();
 
 function basicAuth(req, res, next) {
   if (!ADMIN_PASSWORD) {
@@ -224,20 +388,41 @@ function basicAuth(req, res, next) {
       .send('Админ-панель не настроена: задайте ADMIN_PASSWORD в файле .env и перезапустите сервер.');
   }
 
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  const state = getLoginState(ip);
+
+  if (state.lockedUntil && state.lockedUntil > Date.now()) {
+    const waitMinutes = Math.ceil((state.lockedUntil - Date.now()) / 60000);
+    res.set('Retry-After', String(Math.ceil((state.lockedUntil - Date.now()) / 1000)));
+    return res
+      .status(429)
+      .send(`Слишком много неудачных попыток входа. Попробуйте снова через ${waitMinutes} мин.`);
+  }
+
   const header = req.headers.authorization || '';
   const [scheme, encoded] = header.split(' ');
 
   if (scheme === 'Basic' && encoded) {
-    const decoded = Buffer.from(encoded, 'base64').toString('utf8');
+    let decoded = '';
+    try {
+      decoded = Buffer.from(encoded, 'base64').toString('utf8');
+    } catch (err) {
+      decoded = '';
+    }
     const sepIndex = decoded.indexOf(':');
-    const user = decoded.slice(0, sepIndex);
-    const pass = decoded.slice(sepIndex + 1);
+    const user = sepIndex === -1 ? decoded : decoded.slice(0, sepIndex);
+    const pass = sepIndex === -1 ? '' : decoded.slice(sepIndex + 1);
 
-    if (user === ADMIN_USER && pass === ADMIN_PASSWORD) {
+    const userOk = timingSafeStringEqual(user, ADMIN_USER);
+    const passOk = timingSafeStringEqual(pass, ADMIN_PASSWORD);
+
+    if (userOk && passOk) {
+      clearLoginAttempts(ip);
       return next();
     }
   }
 
+  registerFailedLogin(ip);
   res.set('WWW-Authenticate', 'Basic realm="Admin panel"');
   return res.status(401).send('Требуется авторизация');
 }
@@ -252,7 +437,7 @@ app.get('/api/services', (req, res) => {
 // GET /api/slots?date=YYYY-MM-DD&slots=1|2
 // Возвращает список слотов на указанную дату с пометкой, какие уже заняты
 // (с учётом того, сколько часовых слотов подряд нужно выбранной услуге).
-app.get('/api/slots', (req, res) => {
+app.get('/api/slots', slotsLimiter, (req, res) => {
   const { date } = req.query;
   const slotsNeeded = Math.max(1, Number(req.query.slots) || 1);
 
@@ -298,11 +483,17 @@ app.get('/api/slots', (req, res) => {
 
 // POST /api/book  { name, phone, date, time, serviceId, durationMinutes }
 // Создаёт запись, если нужные слоты свободны, сохраняет её в JSON и шлёт уведомление в Telegram.
-app.post('/api/book', async (req, res) => {
+app.post('/api/book', bookLimiter, async (req, res) => {
   const { name, phone, date, time, serviceId, durationMinutes } = req.body || {};
 
   if (!name || !phone || !date || !time || !serviceId || !durationMinutes) {
     return res.status(400).json({ error: 'Заполните имя, телефон, дату, время и выберите услугу' });
+  }
+  if (!isValidName(name)) {
+    return res.status(400).json({ error: 'Укажите корректное имя (от 2 до 120 символов)' });
+  }
+  if (!isValidPhone(phone)) {
+    return res.status(400).json({ error: 'Укажите корректный номер телефона' });
   }
   if (!isValidDate(date)) {
     return res.status(400).json({ error: 'Некорректная дата' });
