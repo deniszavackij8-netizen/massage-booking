@@ -210,6 +210,11 @@
           <label for="bookPhone">Номер телефона</label>
           <input id="bookPhone" name="phone" type="tel" placeholder="+995 5xx xx xx xx" required maxlength="40">
         </div>
+        <!-- Ловушка для ботов: поле спрятано от людей, бот его заполнит и выдаст себя -->
+        <div aria-hidden="true" style="position:absolute; left:-10000px; width:1px; height:1px; overflow:hidden;">
+          <label for="bookWebsite">Не заполняйте это поле</label>
+          <input id="bookWebsite" name="website" type="text" tabindex="-1" autocomplete="off">
+        </div>
         <div class="field">
           <label for="bookService">Услуга</label>
           <select id="bookService" name="service" required>
@@ -314,6 +319,12 @@
 
   dateInput.min = todayStr();
   dateInput.value = todayStr();
+  // Запись открыта максимум на 60 дней вперёд (то же ограничение стоит на сервере).
+  (function(){
+    var d = new Date(todayStr() + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + 60);
+    dateInput.max = d.toISOString().slice(0, 10);
+  })();
 
   // ---------- услуги и длительность ----------
   function renderDurationOptions(service){
@@ -456,7 +467,8 @@
         date: date,
         time: selectedTime,
         serviceId: selectedService.id,
-        durationMinutes: selectedDuration.minutes
+        durationMinutes: selectedDuration.minutes,
+        website: document.getElementById('bookWebsite').value
       })
     })
       .then(function(res){ return res.json().then(function(data){ return { ok: res.ok, data: data }; }); })
