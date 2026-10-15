@@ -125,6 +125,45 @@ function blockedSlotIndexes(dateBlocks) {
   return blocked;
 }
 
+// Салон физически находится в Батуми — считаем «сейчас» по времени
+// Грузии (Asia/Tbilisi), а не по часовому поясу сервера, чтобы
+// отсечение прошедших слотов не зависело от того, где задеплоен сервер.
+const SALON_TIMEZONE = 'Asia/Tbilisi';
+
+// Минимальное время до начала сеанса, на которое ещё разрешена запись.
+const MIN_LEAD_MINUTES = 60;
+
+function getSalonNow() {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: SALON_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+  const parts = {};
+  fmt.formatToParts(new Date()).forEach((p) => { parts[p.type] = p.value; });
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    minutes: Number(parts.hour) * 60 + Number(parts.minute)
+  };
+}
+
+function timeToMinutes(time) {
+  const [h, m] = time.split(':').map(Number);
+  return h * 60 + m;
+}
+
+// Слот считается «слишком поздним для записи», если дата уже прошла,
+// либо это сегодняшний день и до начала слота осталось меньше часа.
+function isSlotTooSoon(date, time, salonNow) {
+  if (date < salonNow.date) return true;
+  if (date > salonNow.date) return false;
+  return timeToMinutes(time) < salonNow.minutes + MIN_LEAD_MINUTES;
+}
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -229,13 +268,17 @@ app.get('/api/slots', (req, res) => {
   const dateBlocks = blocksForDate(allBlocks, date);
   const dayBlocked = isDayBlocked(dateBlocks);
   const blockedByAdmin = blockedSlotIndexes(dateBlocks);
+  const salonNow = getSalonNow();
 
   const slots = SLOTS.map((time, index) => {
     // Слот недоступен, если: весь день заблокирован администратором,
+    // дата/время уже прошли (или до начала осталось меньше часа),
     // он сам (или любой из следующих slotsNeeded-1) занят записью или
     // заблокирован вручную, либо слотов просто не хватает до конца дня.
     let booked = false;
     if (dayBlocked) {
+      booked = true;
+    } else if (isSlotTooSoon(date, time, salonNow)) {
       booked = true;
     } else if (index + slotsNeeded > SLOTS.length) {
       booked = true;
@@ -284,6 +327,9 @@ app.post('/api/book', async (req, res) => {
   const dateBlocks = blocksForDate(allBlocks, date);
   if (isDayBlocked(dateBlocks)) {
     return res.status(409).json({ error: 'В этот день запись закрыта. Выберите другую дату.' });
+  }
+  if (isSlotTooSoon(date, time, getSalonNow())) {
+    return res.status(409).json({ error: 'Это время уже прошло или наступает меньше чем через час. Выберите другое время.' });
   }
   const blockedByAdmin = blockedSlotIndexes(dateBlocks);
 
