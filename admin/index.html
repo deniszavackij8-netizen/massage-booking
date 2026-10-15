@@ -44,19 +44,73 @@
   .empty, .error, .loading{padding:20px; color:var(--fg-muted); font-size:.92rem;}
   .error{color:var(--bad);}
   .table-wrap{overflow-x:auto;}
+
+  .section-title{font-family:var(--font-display); font-weight:600; font-size:1.25rem; margin:36px 0 14px;}
+  .block-card{background:var(--bg-raised); border:1px solid var(--line); border-radius:16px; padding:18px; margin-bottom:18px;}
+  .block-form{display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;}
+  .block-field{display:flex; flex-direction:column; gap:5px;}
+  .block-field label{font-size:.8rem; font-weight:700; color:var(--fg-muted);}
+  .block-field input, .block-field select{
+    border:1px solid var(--line); border-radius:10px; padding:9px 12px; font:inherit; background:#fff; color:var(--fg);
+  }
+  .block-whole-day{display:flex; align-items:center; gap:8px; font-size:.88rem; font-weight:700; padding-bottom:9px;}
+  .add-block-btn{
+    border:none; background:var(--brand); color:#fff; border-radius:10px; padding:10px 18px;
+    font:inherit; font-weight:700; cursor:pointer;
+  }
+  .add-block-btn:hover{opacity:.9;}
+  .add-block-btn:disabled{opacity:.5; cursor:not-allowed;}
+  .block-list{display:grid; gap:8px; margin-top:14px;}
+  .block-row{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    background:var(--sand-50); border:1px solid var(--line); border-radius:10px; padding:10px 14px; font-size:.9rem;
+  }
+  .block-row .block-info b{color:var(--brand);}
+  .block-row .block-note{color:var(--fg-muted); font-size:.82rem;}
+  .block-msg{font-size:.88rem; margin-top:10px; min-height:1.3em;}
+  .block-msg.error{color:var(--bad);}
+  .block-msg.success{color:var(--good);}
+
   @media (max-width:640px){
     table{font-size:.82rem;}
     th, td{padding:10px;}
+    .block-form{flex-direction:column; align-items:stretch;}
   }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Записи клиентов</h1>
+  <h1>Админ-панель</h1>
   <p class="sub">Salt & Stone — панель администратора</p>
 
   <div class="stat-row" id="statRow"></div>
 
+  <h2 class="section-title">Блокировка времени</h2>
+  <div class="block-card">
+    <div class="block-form">
+      <div class="block-field">
+        <label for="blockDate">Дата</label>
+        <input type="date" id="blockDate">
+      </div>
+      <div class="block-field">
+        <label for="blockTime">Час</label>
+        <select id="blockTime"></select>
+      </div>
+      <div class="block-whole-day">
+        <input type="checkbox" id="blockWholeDay">
+        <label for="blockWholeDay">Заблокировать весь день</label>
+      </div>
+      <div class="block-field" style="flex:1; min-width:160px;">
+        <label for="blockNote">Причина (необязательно)</label>
+        <input type="text" id="blockNote" placeholder="Например: выходной">
+      </div>
+      <button class="add-block-btn" id="addBlockBtn" type="button">Заблокировать</button>
+    </div>
+    <p class="block-msg" id="blockMsg"></p>
+    <div class="block-list" id="blockList"></div>
+  </div>
+
+  <h2 class="section-title">Записи клиентов</h2>
   <div class="toolbar">
     <input type="date" id="filterDate" aria-label="Фильтр по дате">
     <button id="clearFilter" type="button">Все даты</button>
@@ -191,6 +245,126 @@
   filterDate.addEventListener('change', renderTable);
 
   loadBookings();
+
+  // ---------- блокировка времени ----------
+  var SLOTS = ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
+
+  var blockDate = document.getElementById('blockDate');
+  var blockTime = document.getElementById('blockTime');
+  var blockWholeDay = document.getElementById('blockWholeDay');
+  var blockNote = document.getElementById('blockNote');
+  var addBlockBtn = document.getElementById('addBlockBtn');
+  var blockMsg = document.getElementById('blockMsg');
+  var blockList = document.getElementById('blockList');
+
+  function todayStr(){
+    var d = new Date();
+    var offset = d.getTimezoneOffset();
+    var local = new Date(d.getTime() - offset * 60000);
+    return local.toISOString().slice(0, 10);
+  }
+  blockDate.value = todayStr();
+
+  SLOTS.forEach(function(t){
+    var opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = t;
+    blockTime.appendChild(opt);
+  });
+
+  blockWholeDay.addEventListener('change', function(){
+    blockTime.disabled = blockWholeDay.checked;
+  });
+
+  function fmtBlockRow(b){
+    var when = b.time === null
+      ? '<b>' + b.date + '</b> — весь день'
+      : '<b>' + b.date + '</b> в ' + b.time;
+    var note = b.note ? '<div class="block-note">' + escapeHtml(b.note) + '</div>' : '';
+    return '<div class="block-row"><div class="block-info">' + when + note + '</div>' +
+      '<button class="del-btn" data-block-id="' + b.id + '">Снять</button></div>';
+  }
+
+  function loadBlocks(){
+    fetch('/api/admin/blocks')
+      .then(function(res){
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function(data){
+        var blocks = data.blocks || [];
+        if (!blocks.length){
+          blockList.innerHTML = '<p class="empty" style="padding:0;">Активных блокировок нет.</p>';
+          return;
+        }
+        blockList.innerHTML = blocks.map(fmtBlockRow).join('');
+        blockList.querySelectorAll('[data-block-id]').forEach(function(btn){
+          btn.addEventListener('click', function(){ deleteBlock(btn.getAttribute('data-block-id')); });
+        });
+      })
+      .catch(function(err){
+        blockList.innerHTML = '<p class="error" style="padding:0;">Не удалось загрузить блокировки: ' + err.message + '</p>';
+      });
+  }
+
+  function deleteBlock(id){
+    if (!confirm('Снять эту блокировку?')) return;
+    fetch('/api/admin/blocks/' + encodeURIComponent(id), { method: 'DELETE' })
+      .then(function(res){
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function(){ loadBlocks(); })
+      .catch(function(err){ alert('Не удалось снять блокировку: ' + err.message); });
+  }
+
+  addBlockBtn.addEventListener('click', function(){
+    blockMsg.textContent = '';
+    blockMsg.className = 'block-msg';
+
+    if (!blockDate.value){
+      blockMsg.textContent = 'Укажите дату.';
+      blockMsg.classList.add('error');
+      return;
+    }
+
+    var payload = {
+      date: blockDate.value,
+      time: blockWholeDay.checked ? null : blockTime.value,
+      note: blockNote.value.trim()
+    };
+
+    addBlockBtn.disabled = true;
+    addBlockBtn.textContent = 'Блокируем…';
+
+    fetch('/api/admin/blocks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+      .then(function(res){ return res.json().then(function(data){ return { ok: res.ok, data: data }; }); })
+      .then(function(result){
+        if (!result.ok){
+          blockMsg.textContent = result.data.error || 'Не удалось заблокировать.';
+          blockMsg.classList.add('error');
+        } else {
+          blockMsg.textContent = 'Готово.';
+          blockMsg.classList.add('success');
+          blockNote.value = '';
+          loadBlocks();
+        }
+      })
+      .catch(function(){
+        blockMsg.textContent = 'Ошибка соединения с сервером.';
+        blockMsg.classList.add('error');
+      })
+      .finally(function(){
+        addBlockBtn.disabled = false;
+        addBlockBtn.textContent = 'Заблокировать';
+      });
+  });
+
+  loadBlocks();
 </script>
 </body>
 </html>
