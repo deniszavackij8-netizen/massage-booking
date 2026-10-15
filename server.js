@@ -11,12 +11,19 @@ const PORT = process.env.PORT || 3000;
 // автоматический сбор отпечатка стека для атакующего.
 app.disable('x-powered-by');
 
-// Если сервер стоит за реверс-прокси (nginx и т.п.), который сам
-// терминирует TLS, включите TRUST_PROXY=1 в .env, чтобы req.ip брал
-// настоящий IP клиента из X-Forwarded-For, а не IP самого прокси —
-// иначе блокировка по IP будет блокировать всех разом (или никого).
-if (process.env.TRUST_PROXY === '1') {
-  app.set('trust proxy', 1);
+// Сколько прокси стоит перед сервером (Render, nginx, Cloudflare...).
+// На Render всегда есть как минимум один прокси (балансировщик), поэтому
+// там нужно TRUST_PROXY=1 — иначе все посетители видны серверу с одного
+// и того же IP балансировщика, и блокировка по IP заблокирует всех сразу.
+// Число = количество прокси-«прыжков»; доверяем только им, поэтому подделать
+// свой IP через заголовок X-Forwarded-For посетитель не сможет.
+const TRUST_PROXY_HOPS = Number.parseInt(process.env.TRUST_PROXY || '0', 10);
+if (Number.isInteger(TRUST_PROXY_HOPS) && TRUST_PROXY_HOPS > 0) {
+  app.set('trust proxy', TRUST_PROXY_HOPS);
+}
+
+function clientIp(req) {
+  return req.ip || (req.socket && req.socket.remoteAddress) || 'unknown';
 }
 
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
@@ -177,6 +184,50 @@ function isSlotTooSoon(date, time, salonNow) {
   return timeToMinutes(time) < salonNow.minutes + MIN_LEAD_MINUTES;
 }
 
+// Запись не дальше чем на 60 дней вперёд — иначе бот мог бы забивать
+// записями 2030-й, 2040-й год... и раздувать файл с записями до бесконечности.
+const MAX_DAYS_AHEAD = 60;
+
+function isDateTooFar(date, salonNow) {
+  const [y, m, d] = salonNow.date.split('-').map(Number);
+  const limit = new Date(Date.UTC(y, m - 1, d + MAX_DAYS_AHEAD)).toISOString().slice(0, 10);
+  return date > limit;
+}
+
+// Номер телефона «как ключ»: только цифры, чтобы "+995 555 12 34 56"
+// и "995555123456" считались одним и тем же номером.
+function normalizePhone(phone) {
+  return String(phone || '').replace(/\D/g, '');
+}
+
+const MAX_ACTIVE_BOOKINGS_PER_PHONE = 3;
+
+// Предохранитель на весь сайт: не больше 20 новых записей в час от всех
+// посетителей вместе. Для одного салона это с большим запасом, а ботнет
+// с тысячами IP больше не сможет за минуту занять всё расписание.
+const GLOBAL_BOOKINGS_PER_HOUR = 20;
+let globalBookingTimestamps = [];
+let lastBookingFloodAlertAt = 0;
+
+function globalBookingGuardAllows() {
+  const now = Date.now();
+  globalBookingTimestamps = globalBookingTimestamps.filter((t) => t > now - 60 * 60 * 1000);
+  if (globalBookingTimestamps.length < GLOBAL_BOOKINGS_PER_HOUR) return true;
+
+  if (now - lastBookingFloodAlertAt > 30 * 60 * 1000) {
+    lastBookingFloodAlertAt = now;
+    sendTelegramText(
+      `⚠️ За последний час пришло ${globalBookingTimestamps.length} онлайн-записей — похоже на атаку ботов. ` +
+      'Новые онлайн-записи временно приостановлены, проверьте список в админке.'
+    ).catch((err) => console.error('Telegram alert:', err.message));
+  }
+  return false;
+}
+
+function registerGlobalBooking() {
+  globalBookingTimestamps.push(Date.now());
+}
+
 // Ограничиваем размер тела запроса — защита от примитивного DoS
 // большими телами запроса и от переполнения диска логами/ошибками.
 app.use(express.json({ limit: '15kb' }));
@@ -188,6 +239,13 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer-when-downgrade');
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  // Браузер будет открывать сайт только по HTTPS (на localhost по http игнорируется).
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  // Ответы API и админки (имена и телефоны клиентов) не кешируем —
+  // чтобы они не оставались в кеше браузера на чужом/общем компьютере.
+  if (req.path.startsWith('/api/') || req.path.startsWith('/admin')) {
+    res.setHeader('Cache-Control', 'no-store');
+  }
   next();
 });
 
@@ -214,8 +272,19 @@ function readBookings() {
   }
 }
 
+// Атомарная запись: сначала пишем во временный файл, потом переименовываем.
+// Если сервер упадёт посреди записи, старый файл останется целым — иначе
+// получился бы обрезанный JSON, который читается как пустой список, и при
+// следующей записи все существующие записи были бы молча стёрты.
+function writeJsonAtomic(file, data) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8');
+  fs.renameSync(tmp, file);
+}
+
 function writeBookings(bookings) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(bookings, null, 2), 'utf8');
+  writeJsonAtomic(DATA_FILE, bookings);
 }
 
 function readBlocks() {
@@ -229,7 +298,7 @@ function readBlocks() {
 }
 
 function writeBlocks(blocks) {
-  fs.writeFileSync(BLOCKS_FILE, JSON.stringify(blocks, null, 2), 'utf8');
+  writeJsonAtomic(BLOCKS_FILE, blocks);
 }
 
 function isValidDate(value) {
@@ -293,7 +362,7 @@ function createRateLimiter({ windowMs, max, message }) {
   }, Math.min(windowMs, 5 * 60 * 1000)).unref();
 
   return (req, res, next) => {
-    const ip = req.ip || req.connection.remoteAddress || 'unknown';
+    const ip = clientIp(req);
     const now = Date.now();
     const cutoff = now - windowMs;
     const timestamps = (hits.get(ip) || []).filter((t) => t > cutoff);
@@ -356,14 +425,43 @@ function getLoginState(ip) {
   return loginAttemptsByIp.get(ip) || { count: 0, lockedUntil: 0 };
 }
 
+// Атака ботнетом (тысячи разных IP по 4 попытки) обходит блокировку по IP.
+// Блокировать вход для всех нельзя — тогда бот запрёт админку и владельцу.
+// Поэтому при всплеске неудачных входов со всего интернета просто шлём
+// предупреждение в Telegram (не чаще раза в 30 минут). От самого подбора
+// защищает длинный случайный пароль: перебрать его ботнетом нереально.
+const GLOBAL_FAIL_WINDOW_MS = 10 * 60 * 1000;
+const GLOBAL_FAIL_ALERT_THRESHOLD = 30;
+const GLOBAL_ALERT_COOLDOWN_MS = 30 * 60 * 1000;
+let globalFailTimestamps = [];
+let lastGlobalAlertAt = 0;
+
+function trackGlobalFailedLogin() {
+  const now = Date.now();
+  globalFailTimestamps = globalFailTimestamps.filter((t) => t > now - GLOBAL_FAIL_WINDOW_MS);
+  globalFailTimestamps.push(now);
+  if (
+    globalFailTimestamps.length >= GLOBAL_FAIL_ALERT_THRESHOLD &&
+    now - lastGlobalAlertAt > GLOBAL_ALERT_COOLDOWN_MS
+  ) {
+    lastGlobalAlertAt = now;
+    sendTelegramText(
+      `⚠️ Подозрительная активность: ${globalFailTimestamps.length} неудачных попыток входа в админку за 10 минут. ` +
+      'Если это не вы — пароль надёжный, но стоит проверить логи на Render.'
+    ).catch((err) => console.error('Telegram alert:', err.message));
+  }
+}
+
 function registerFailedLogin(ip) {
   const state = getLoginState(ip);
   state.count += 1;
   if (state.count >= MAX_LOGIN_ATTEMPTS) {
     state.lockedUntil = Date.now() + LOGIN_LOCKOUT_MS;
     state.count = 0; // следующий отсчёт из 5 попыток начнётся после разблокировки
+    console.warn(`Админка: IP ${ip} заблокирован на 20 минут после ${MAX_LOGIN_ATTEMPTS} неудачных попыток`);
   }
   loginAttemptsByIp.set(ip, state);
+  trackGlobalFailedLogin();
 }
 
 function clearLoginAttempts(ip) {
@@ -388,7 +486,7 @@ function basicAuth(req, res, next) {
       .send('Админ-панель не настроена: задайте ADMIN_PASSWORD в файле .env и перезапустите сервер.');
   }
 
-  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  const ip = clientIp(req);
   const state = getLoginState(ip);
 
   if (state.lockedUntil && state.lockedUntil > Date.now()) {
@@ -439,7 +537,7 @@ app.get('/api/services', (req, res) => {
 // (с учётом того, сколько часовых слотов подряд нужно выбранной услуге).
 app.get('/api/slots', slotsLimiter, (req, res) => {
   const { date } = req.query;
-  const slotsNeeded = Math.max(1, Number(req.query.slots) || 1);
+  const slotsNeeded = Math.min(4, Math.max(1, Math.floor(Number(req.query.slots)) || 1));
 
   if (!date || !isValidDate(date)) {
     return res.status(400).json({ error: 'Укажите корректную дату в формате YYYY-MM-DD' });
@@ -463,7 +561,7 @@ app.get('/api/slots', slotsLimiter, (req, res) => {
     let booked = false;
     if (dayBlocked) {
       booked = true;
-    } else if (isSlotTooSoon(date, time, salonNow)) {
+    } else if (isSlotTooSoon(date, time, salonNow) || isDateTooFar(date, salonNow)) {
       booked = true;
     } else if (index + slotsNeeded > SLOTS.length) {
       booked = true;
@@ -484,7 +582,15 @@ app.get('/api/slots', slotsLimiter, (req, res) => {
 // POST /api/book  { name, phone, date, time, serviceId, durationMinutes }
 // Создаёт запись, если нужные слоты свободны, сохраняет её в JSON и шлёт уведомление в Telegram.
 app.post('/api/book', bookLimiter, async (req, res) => {
-  const { name, phone, date, time, serviceId, durationMinutes } = req.body || {};
+  const { name, phone, date, time, serviceId, durationMinutes, website } = req.body || {};
+
+  // «Ловушка для ботов» (honeypot): поле website спрятано от людей на
+  // странице, но простые боты заполняют все поля подряд. Отвечаем боту
+  // «успехом», чтобы он не понял, что его раскусили, но ничего не сохраняем.
+  if (website) {
+    console.warn(`Бот попал в ловушку (honeypot), IP ${clientIp(req)}`);
+    return res.json({ success: true });
+  }
 
   if (!name || !phone || !date || !time || !serviceId || !durationMinutes) {
     return res.status(400).json({ error: 'Заполните имя, телефон, дату, время и выберите услугу' });
@@ -498,8 +604,11 @@ app.post('/api/book', bookLimiter, async (req, res) => {
   if (!isValidDate(date)) {
     return res.status(400).json({ error: 'Некорректная дата' });
   }
+  if (isDateTooFar(date, getSalonNow())) {
+    return res.status(400).json({ error: `Запись открыта не больше чем на ${MAX_DAYS_AHEAD} дней вперёд` });
+  }
 
-  const startIndex = SLOTS.indexOf(time);
+  const startIndex = typeof time === 'string' ? SLOTS.indexOf(time) : -1;
   if (startIndex === -1) {
     return res.status(400).json({ error: 'Некорректное время сеанса' });
   }
@@ -541,8 +650,30 @@ app.post('/api/book', bookLimiter, async (req, res) => {
     return res.status(409).json({ error: 'Это время (или часть выбранной длительности) уже занято или заблокировано. Выберите другое.' });
   }
 
+  // Не больше MAX_ACTIVE_BOOKINGS_PER_PHONE будущих записей на один номер —
+  // чтобы один человек/бот не мог занять полрасписания на свой телефон.
+  const phoneKey = normalizePhone(phone);
+  const salonNowForCount = getSalonNow();
+  const activeForPhone = bookings.filter(
+    (b) => normalizePhone(b.phone) === phoneKey && b.date >= salonNowForCount.date
+  ).length;
+  if (activeForPhone >= MAX_ACTIVE_BOOKINGS_PER_PHONE) {
+    return res.status(409).json({
+      error: 'На этот номер уже есть несколько активных записей. Для новой записи свяжитесь с нами в WhatsApp или Telegram.'
+    });
+  }
+
+  // Общий «предохранитель» от ботнета: если за последний час со всего
+  // интернета пришло подозрительно много записей — новые временно не
+  // принимаем и предупреждаем владельца в Telegram.
+  if (!globalBookingGuardAllows()) {
+    return res.status(429).json({
+      error: 'Онлайн-запись временно перегружена. Пожалуйста, напишите нам в WhatsApp или Telegram.'
+    });
+  }
+
   const booking = {
-    id: Date.now().toString(),
+    id: crypto.randomUUID(),
     name: String(name).trim().slice(0, 120),
     phone: String(phone).trim().slice(0, 40),
     date,
@@ -557,6 +688,7 @@ app.post('/api/book', bookLimiter, async (req, res) => {
 
   bookings.push(booking);
   writeBookings(bookings);
+  registerGlobalBooking();
 
   try {
     await sendTelegramNotification(booking);
@@ -570,11 +702,6 @@ app.post('/api/book', bookLimiter, async (req, res) => {
 });
 
 async function sendTelegramNotification(booking) {
-  if (!BOT_TOKEN || CHAT_IDS.length === 0) {
-    console.warn('BOT_TOKEN/CHAT_ID не настроены — уведомление в Telegram пропущено.');
-    return;
-  }
-
   const serviceLine = booking.serviceName
     ? `, Услуга: ${booking.serviceName} (${booking.durationMinutes} мин, ${booking.price}₾)`
     : '';
@@ -582,6 +709,18 @@ async function sendTelegramNotification(booking) {
   const text =
     `Новая запись! Имя: ${booking.name}, Телефон: ${booking.phone}, ` +
     `Время: ${booking.date} ${booking.time}${serviceLine}`;
+
+  await sendTelegramText(text);
+}
+
+// Текст отправляется без parse_mode, поэтому имя клиента вроде
+// "<b>..." или "*...*" не может сломать разметку сообщения — оно
+// приходит в Telegram как обычный текст.
+async function sendTelegramText(text) {
+  if (!BOT_TOKEN || CHAT_IDS.length === 0) {
+    console.warn('BOT_TOKEN/CHAT_ID не настроены — уведомление в Telegram пропущено.');
+    return;
+  }
 
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
 
@@ -662,6 +801,9 @@ app.post('/api/admin/blocks', basicAuth, (req, res) => {
     return res.status(400).json({ error: 'Укажите корректную дату' });
   }
 
+  if (note !== undefined && note !== null && typeof note !== 'string') {
+    return res.status(400).json({ error: 'Некорректный комментарий' });
+  }
   const normalizedTime = time ? String(time) : null;
   if (normalizedTime !== null && !SLOTS.includes(normalizedTime)) {
     return res.status(400).json({ error: 'Некорректное время. Оставьте поле пустым, чтобы заблокировать весь день.' });
@@ -676,7 +818,7 @@ app.post('/api/admin/blocks', basicAuth, (req, res) => {
   }
 
   const block = {
-    id: Date.now().toString(),
+    id: crypto.randomUUID(),
     date,
     time: normalizedTime,
     note: note ? String(note).trim().slice(0, 200) : '',
@@ -702,8 +844,27 @@ app.delete('/api/admin/blocks/:id', basicAuth, (req, res) => {
   res.json({ success: true });
 });
 
+// GET /api/admin/whoami — диагностика: какой IP сервер видит у вас.
+// Нужна, чтобы проверить настройку TRUST_PROXY: здесь должен быть ваш
+// настоящий IP (как на сайте 2ip.ru), а не адрес балансировщика Render.
+app.get('/api/admin/whoami', basicAuth, (req, res) => {
+  res.json({
+    ipSeenByServer: clientIp(req),
+    trustProxyHops: TRUST_PROXY_HOPS || 0,
+    xForwardedFor: req.headers['x-forwarded-for'] || null
+  });
+});
+
 // Страница админ-панели (защищена тем же Basic Auth).
 app.use('/admin', basicAuth, express.static(path.join(__dirname, 'admin')));
+
+// Последний обработчик ошибок: любая непредвиденная ошибка — аккуратный
+// ответ 500 без технических подробностей (стек, пути к файлам) наружу.
+app.use((err, req, res, next) => {
+  console.error('Необработанная ошибка:', err);
+  if (res.headersSent) return next(err);
+  return res.status(500).json({ error: 'Внутренняя ошибка сервера. Попробуйте позже.' });
+});
 
 app.listen(PORT, () => {
   console.log(`Сервер запущен: http://localhost:${PORT}`);
