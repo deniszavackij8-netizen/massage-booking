@@ -140,6 +140,25 @@
   .booking-side ul{list-style:none; margin:16px 0 0; padding:0; display:grid; gap:10px; font-size:.9rem; color:#d8d2c7;}
   .booking-side li{display:flex; justify-content:space-between; border-bottom:1px dashed rgba(255,255,255,.18); padding-bottom:8px;}
 
+  .address-card{
+    margin:16px 0 26px; padding:14px 16px; border-radius:14px;
+    background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12);
+  }
+  .address-text{font-size:.95rem; font-weight:600; color:#fff; line-height:1.45; overflow-wrap:anywhere;}
+  .address-actions{display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;}
+  .address-btn{
+    display:inline-flex; align-items:center; gap:6px; min-height:40px; padding:8px 14px;
+    border-radius:999px; font:inherit; font-size:.85rem; font-weight:700; cursor:pointer;
+    text-decoration:none; transition:background .15s, color .15s, border-color .15s;
+  }
+  .address-btn svg{width:16px; height:16px; flex:none;}
+  .address-copy{background:var(--sand-50); color:var(--stone-900); border:1px solid var(--sand-50);}
+  .address-copy:hover{background:#fff;}
+  .address-copy.copied{background:var(--good); border-color:var(--good); color:#fff;}
+  .address-map{background:transparent; color:var(--sand-50); border:1px solid rgba(255,255,255,.3);}
+  .address-map:hover{border-color:#fff; color:#fff;}
+  .address-btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+
   footer{padding-block:28px; border-top:1px solid var(--line); text-align:center; font-size:.82rem; color:var(--fg-muted);}
 
   @media (max-width:860px){
@@ -241,6 +260,20 @@
       </form>
 
       <div class="booking-side">
+        <h3>Адрес</h3>
+        <div class="address-card">
+          <div class="address-text" id="salonAddress">103 Gorgasali Street, Flamingo Salon</div>
+          <div class="address-actions">
+            <button type="button" class="address-btn address-copy" id="copyAddressBtn" aria-live="polite">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+              <span>Скопировать</span>
+            </button>
+            <a class="address-btn address-map" href="https://www.google.com/maps/search/?api=1&query=103%20Gorgasali%20Street%2C%20Batumi" target="_blank" rel="noopener">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+              <span>На карте</span>
+            </a>
+          </div>
+        </div>
         <h3>Часы работы</h3>
         <ul>
           <li><span>Пн – Пт</span><b>10:00 – 21:00</b></li>
@@ -259,7 +292,7 @@
 </section>
 
 <footer>
-  <div class="wrap">© 2026 Salt & Stone Massage & Spa, Батуми.</div>
+  <div class="wrap">© 2026 Salt & Stone Massage & Spa · 103 Gorgasali Street, Flamingo Salon, Батуми.</div>
 </footer>
 
 <script>
@@ -270,6 +303,55 @@
   links.querySelectorAll('a').forEach(function(a){
     a.addEventListener('click', function(){ links.classList.remove('open'); });
   });
+
+  // ---------- копирование адреса ----------
+  (function(){
+    var btn = document.getElementById('copyAddressBtn');
+    var label = btn.querySelector('span');
+    var address = document.getElementById('salonAddress').textContent.trim();
+    var resetTimer = null;
+
+    // Запасной способ для старых браузеров и встроенных браузеров
+    // (Instagram, Facebook), где navigator.clipboard недоступен.
+    function fallbackCopy(text){
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      return ok;
+    }
+
+    function showResult(ok){
+      clearTimeout(resetTimer);
+      if (ok){
+        btn.classList.add('copied');
+        label.textContent = 'Скопировано ✓';
+      } else {
+        label.textContent = 'Выделите и скопируйте';
+      }
+      resetTimer = setTimeout(function(){
+        btn.classList.remove('copied');
+        label.textContent = 'Скопировать';
+      }, 2000);
+    }
+
+    btn.addEventListener('click', function(){
+      if (navigator.clipboard && window.isSecureContext){
+        navigator.clipboard.writeText(address)
+          .then(function(){ showResult(true); })
+          .catch(function(){ showResult(fallbackCopy(address)); });
+      } else {
+        showResult(fallbackCopy(address));
+      }
+    });
+  })();
 
   // ---------- онлайн-запись ----------
   var dateInput = document.getElementById('bookDate');
