@@ -35,7 +35,8 @@
   th, td{text-align:left; padding:12px 14px; font-size:.9rem; border-bottom:1px solid var(--line);}
   th{background:var(--sand-200); font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; color:var(--stone-700);}
   tr:last-child td{border-bottom:none;}
-  .phone-link{color:var(--brand); text-decoration:none; font-weight:700;}
+  .phone-link{color:var(--brand); text-decoration:none; font-weight:700; white-space:nowrap;}
+  td:first-child{white-space:nowrap;}
   .del-btn{
     border:1px solid var(--bad); color:var(--bad); background:#fff; border-radius:8px;
     padding:6px 12px; font:inherit; font-size:.82rem; font-weight:700; cursor:pointer;
@@ -67,6 +68,8 @@
   }
   .block-row .block-info b{color:var(--brand);}
   .block-row .block-note{color:var(--fg-muted); font-size:.82rem;}
+  .muted-small{color:var(--fg-muted); font-size:.82rem;}
+  .block-empty{padding:0;}
   .block-msg{font-size:.88rem; margin-top:10px; min-height:1.3em;}
   .block-msg.error{color:var(--bad);}
   .block-msg.success{color:var(--good);}
@@ -126,6 +129,7 @@
           <th>Услуга</th>
           <th>Имя</th>
           <th>Телефон</th>
+          <th>Язык</th>
           <th>Создано</th>
           <th></th>
         </tr>
@@ -136,235 +140,6 @@
   </div>
 </div>
 
-<script>
-  var tableEl = document.getElementById('bookingsTable');
-  var bodyEl = document.getElementById('bookingsBody');
-  var loadingEl = document.getElementById('loadingMsg');
-  var statRow = document.getElementById('statRow');
-  var filterDate = document.getElementById('filterDate');
-  var allBookings = [];
-
-  function fmtCreated(iso){
-    try{
-      var d = new Date(iso);
-      return d.toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
-    }catch(e){ return iso; }
-  }
-
-  function renderStats(list){
-    var today = new Date().toISOString().slice(0,10);
-    var todayCount = list.filter(function(b){ return b.date === today; }).length;
-    statRow.innerHTML =
-      '<div class="stat"><b>' + list.length + '</b><span>Всего записей</span></div>' +
-      '<div class="stat"><b>' + todayCount + '</b><span>Сегодня (' + today + ')</span></div>';
-  }
-
-  function renderTable(){
-    var date = filterDate.value;
-    var list = date ? allBookings.filter(function(b){ return b.date === date; }) : allBookings;
-
-    if (!list.length){
-      tableEl.hidden = true;
-      loadingEl.hidden = false;
-      loadingEl.textContent = 'Записей нет.';
-      loadingEl.className = 'empty';
-      return;
-    }
-
-    bodyEl.innerHTML = '';
-    list.forEach(function(b){
-      var serviceCell = b.serviceName
-        ? escapeHtml(b.serviceName) + '<br><span style="color:var(--fg-muted); font-size:.82rem;">' +
-          (b.durationMinutes || '') + ' мин' + (b.price ? ', ' + b.price + '₾' : '') + '</span>'
-        : '<span style="color:var(--fg-muted);">—</span>';
-      var tr = document.createElement('tr');
-      tr.innerHTML =
-        '<td>' + b.date + '</td>' +
-        '<td>' + b.time + '</td>' +
-        '<td>' + serviceCell + '</td>' +
-        '<td>' + escapeHtml(b.name) + '</td>' +
-        '<td><a class="phone-link" href="tel:' + encodeURIComponent(b.phone) + '">' + escapeHtml(b.phone) + '</a></td>' +
-        '<td>' + fmtCreated(b.createdAt) + '</td>' +
-        '<td><button class="del-btn" data-id="' + b.id + '">Отменить</button></td>';
-      bodyEl.appendChild(tr);
-    });
-
-    tableEl.hidden = false;
-    loadingEl.hidden = true;
-
-    bodyEl.querySelectorAll('.del-btn').forEach(function(btn){
-      btn.addEventListener('click', function(){ deleteBooking(btn.getAttribute('data-id')); });
-    });
-  }
-
-  function escapeHtml(str){
-    var div = document.createElement('div');
-    div.textContent = str == null ? '' : String(str);
-    return div.innerHTML;
-  }
-
-  function loadBookings(){
-    loadingEl.hidden = false;
-    loadingEl.className = 'loading';
-    loadingEl.textContent = 'Загрузка записей…';
-    tableEl.hidden = true;
-
-    fetch('/api/admin/bookings')
-      .then(function(res){
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.json();
-      })
-      .then(function(data){
-        allBookings = data.bookings || [];
-        renderStats(allBookings);
-        renderTable();
-      })
-      .catch(function(err){
-        loadingEl.className = 'error';
-        loadingEl.textContent = 'Не удалось загрузить записи: ' + err.message;
-      });
-  }
-
-  function deleteBooking(id){
-    if (!confirm('Отменить эту запись? Время снова станет свободным.')) return;
-
-    fetch('/api/admin/bookings/' + encodeURIComponent(id), { method: 'DELETE' })
-      .then(function(res){
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.json();
-      })
-      .then(function(){ loadBookings(); })
-      .catch(function(err){ alert('Не удалось отменить запись: ' + err.message); });
-  }
-
-  document.getElementById('refreshBtn').addEventListener('click', loadBookings);
-  document.getElementById('clearFilter').addEventListener('click', function(){
-    filterDate.value = '';
-    renderTable();
-  });
-  filterDate.addEventListener('change', renderTable);
-
-  loadBookings();
-
-  // ---------- блокировка времени ----------
-  var SLOTS = ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
-
-  var blockDate = document.getElementById('blockDate');
-  var blockTime = document.getElementById('blockTime');
-  var blockWholeDay = document.getElementById('blockWholeDay');
-  var blockNote = document.getElementById('blockNote');
-  var addBlockBtn = document.getElementById('addBlockBtn');
-  var blockMsg = document.getElementById('blockMsg');
-  var blockList = document.getElementById('blockList');
-
-  function todayStr(){
-    var d = new Date();
-    var offset = d.getTimezoneOffset();
-    var local = new Date(d.getTime() - offset * 60000);
-    return local.toISOString().slice(0, 10);
-  }
-  blockDate.value = todayStr();
-
-  SLOTS.forEach(function(t){
-    var opt = document.createElement('option');
-    opt.value = t;
-    opt.textContent = t;
-    blockTime.appendChild(opt);
-  });
-
-  blockWholeDay.addEventListener('change', function(){
-    blockTime.disabled = blockWholeDay.checked;
-  });
-
-  function fmtBlockRow(b){
-    var when = b.time === null
-      ? '<b>' + b.date + '</b> — весь день'
-      : '<b>' + b.date + '</b> в ' + b.time;
-    var note = b.note ? '<div class="block-note">' + escapeHtml(b.note) + '</div>' : '';
-    return '<div class="block-row"><div class="block-info">' + when + note + '</div>' +
-      '<button class="del-btn" data-block-id="' + b.id + '">Снять</button></div>';
-  }
-
-  function loadBlocks(){
-    fetch('/api/admin/blocks')
-      .then(function(res){
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.json();
-      })
-      .then(function(data){
-        var blocks = data.blocks || [];
-        if (!blocks.length){
-          blockList.innerHTML = '<p class="empty" style="padding:0;">Активных блокировок нет.</p>';
-          return;
-        }
-        blockList.innerHTML = blocks.map(fmtBlockRow).join('');
-        blockList.querySelectorAll('[data-block-id]').forEach(function(btn){
-          btn.addEventListener('click', function(){ deleteBlock(btn.getAttribute('data-block-id')); });
-        });
-      })
-      .catch(function(err){
-        blockList.innerHTML = '<p class="error" style="padding:0;">Не удалось загрузить блокировки: ' + err.message + '</p>';
-      });
-  }
-
-  function deleteBlock(id){
-    if (!confirm('Снять эту блокировку?')) return;
-    fetch('/api/admin/blocks/' + encodeURIComponent(id), { method: 'DELETE' })
-      .then(function(res){
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.json();
-      })
-      .then(function(){ loadBlocks(); })
-      .catch(function(err){ alert('Не удалось снять блокировку: ' + err.message); });
-  }
-
-  addBlockBtn.addEventListener('click', function(){
-    blockMsg.textContent = '';
-    blockMsg.className = 'block-msg';
-
-    if (!blockDate.value){
-      blockMsg.textContent = 'Укажите дату.';
-      blockMsg.classList.add('error');
-      return;
-    }
-
-    var payload = {
-      date: blockDate.value,
-      time: blockWholeDay.checked ? null : blockTime.value,
-      note: blockNote.value.trim()
-    };
-
-    addBlockBtn.disabled = true;
-    addBlockBtn.textContent = 'Блокируем…';
-
-    fetch('/api/admin/blocks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-      .then(function(res){ return res.json().then(function(data){ return { ok: res.ok, data: data }; }); })
-      .then(function(result){
-        if (!result.ok){
-          blockMsg.textContent = result.data.error || 'Не удалось заблокировать.';
-          blockMsg.classList.add('error');
-        } else {
-          blockMsg.textContent = 'Готово.';
-          blockMsg.classList.add('success');
-          blockNote.value = '';
-          loadBlocks();
-        }
-      })
-      .catch(function(){
-        blockMsg.textContent = 'Ошибка соединения с сервером.';
-        blockMsg.classList.add('error');
-      })
-      .finally(function(){
-        addBlockBtn.disabled = false;
-        addBlockBtn.textContent = 'Заблокировать';
-      });
-  });
-
-  loadBlocks();
-</script>
+<script src="/admin/admin.js"></script>
 </body>
 </html>

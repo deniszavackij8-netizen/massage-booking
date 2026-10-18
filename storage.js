@@ -4,9 +4,9 @@
 // PostgreSQL (например, бесплатный Neon). Данные там постоянные и не
 // пропадают при перезапуске/обновлении сайта на Render.
 //
-// Если DATABASE_URL не задана — работаем по-старому, с JSON-файлами в
-// папке data/ (удобно для запуска на своём компьютере). На бесплатном
-// Render файлы стираются при каждом деплое, поэтому там нужна база.
+// Если DATABASE_URL не задана — работаем с JSON-файлами в папке data/
+// (удобно для запуска на своём компьютере). На бесплатном Render файлы
+// стираются при каждом деплое, поэтому там нужна база.
 
 const fs = require('fs');
 const path = require('path');
@@ -14,6 +14,7 @@ const path = require('path');
 const DATA_DIR = path.join(__dirname, 'data');
 const BOOKINGS_FILE = path.join(DATA_DIR, 'bookings.json');
 const BLOCKS_FILE = path.join(DATA_DIR, 'blocks.json');
+const STATE_FILE = path.join(DATA_DIR, 'state.json');
 
 // ---------------------------------------------------------------------------
 // Общие помощники
@@ -23,13 +24,17 @@ function normalizePhone(phone) {
   return String(phone || '').replace(/\D/g, '');
 }
 
-function readJsonArray(file) {
+function readJson(file, fallback) {
   try {
-    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return Array.isArray(data) ? data : [];
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (err) {
-    return [];
+    return fallback;
   }
+}
+
+function readJsonArray(file) {
+  const data = readJson(file, []);
+  return Array.isArray(data) ? data : [];
 }
 
 // Атомарная запись: временный файл + переименование, чтобы сбой посреди
@@ -55,6 +60,13 @@ function sortBlocks(list) {
   });
 }
 
+// Хеш токена отмены — наружу (в админку, в ответы API) никогда не отдаём.
+function publicBooking(b) {
+  if (!b) return b;
+  const { cancelTokenHash, ...rest } = b;
+  return rest;
+}
+
 // ---------------------------------------------------------------------------
 // Вариант 1: JSON-файлы (без базы данных)
 // ---------------------------------------------------------------------------
@@ -77,7 +89,7 @@ function createFileStore() {
     },
 
     async bookingsForDate(date) {
-      return readJsonArray(BOOKINGS_FILE).filter((b) => b.date === date);
+      return readJsonArray(BOOKINGS_FILE).filter((b) => b.date === date).map(publicBooking);
     },
 
     async blocksForDate(date) {
@@ -85,7 +97,7 @@ function createFileStore() {
     },
 
     async allBookings() {
-      return sortBookings(readJsonArray(BOOKINGS_FILE));
+      return sortBookings(readJsonArray(BOOKINGS_FILE)).map(publicBooking);
     },
 
     async allBlocks() {
@@ -110,6 +122,21 @@ function createFileStore() {
           }
         };
         return fn(tx);
+      });
+    },
+
+    async findBookingByTokenHash(hash) {
+      return readJsonArray(BOOKINGS_FILE).find((b) => b.cancelTokenHash && b.cancelTokenHash === hash) || null;
+    },
+
+    // Удаляет запись по id, только если её токен совпадает. Возвращает удалённую запись или null.
+    deleteBookingByToken(id, hash) {
+      return exclusive(async () => {
+        const bookings = readJsonArray(BOOKINGS_FILE);
+        const found = bookings.find((b) => b.id === id && b.cancelTokenHash === hash);
+        if (!found) return null;
+        writeJsonAtomic(BOOKINGS_FILE, bookings.filter((b) => b !== found));
+        return publicBooking(found);
       });
     },
 
@@ -144,6 +171,26 @@ function createFileStore() {
       });
     },
 
+    // «Застолбить» ключ (например, «сводка за 2026-10-18 отправлена»).
+    // true — ключ был свободен и теперь наш; false — его уже кто-то занял.
+    claimState(key) {
+      return exclusive(async () => {
+        const state = readJson(STATE_FILE, {});
+        if (Object.prototype.hasOwnProperty.call(state, key)) return false;
+        state[key] = new Date().toISOString();
+        writeJsonAtomic(STATE_FILE, state);
+        return true;
+      });
+    },
+
+    releaseState(key) {
+      return exclusive(async () => {
+        const state = readJson(STATE_FILE, {});
+        delete state[key];
+        writeJsonAtomic(STATE_FILE, state);
+      });
+    },
+
     async close() {}
   };
 }
@@ -155,6 +202,7 @@ function createFileStore() {
 // Даты храним как текст 'YYYY-MM-DD', а не тип DATE: драйвер превращает
 // DATE в объект Date в часовом поясе сервера, и дата может «съехать» на
 // день. Текст в таком формате корректно сравнивается и сортируется.
+// Все команды безопасно выполнять повторно при каждом запуске.
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS bookings (
   id               TEXT PRIMARY KEY,
@@ -170,8 +218,12 @@ CREATE TABLE IF NOT EXISTS bookings (
   price            INTEGER,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS lang TEXT;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS cancel_token_hash TEXT;
 CREATE INDEX IF NOT EXISTS bookings_date_idx ON bookings (date);
 CREATE INDEX IF NOT EXISTS bookings_phone_key_idx ON bookings (phone_key, date);
+CREATE UNIQUE INDEX IF NOT EXISTS bookings_cancel_token_idx ON bookings (cancel_token_hash)
+  WHERE cancel_token_hash IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS blocks (
   id         TEXT PRIMARY KEY,
@@ -181,10 +233,16 @@ CREATE TABLE IF NOT EXISTS blocks (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS blocks_date_time_uniq ON blocks (date, COALESCE(time, ''));
+
+CREATE TABLE IF NOT EXISTS app_state (
+  key        TEXT PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 `;
 
+// cancel_token_hash сюда сознательно не входит — он не нужен ни админке, ни клиенту.
 const BOOKING_COLUMNS = `id, name, phone, date, time, service_id, service_name,
-  duration_minutes, slots_count, price, created_at`;
+  duration_minutes, slots_count, price, lang, created_at`;
 
 function rowToBooking(r) {
   return {
@@ -198,6 +256,7 @@ function rowToBooking(r) {
     durationMinutes: r.duration_minutes,
     slotsCount: r.slots_count,
     price: r.price,
+    lang: r.lang || null,
     createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at
   };
 }
@@ -215,13 +274,14 @@ function rowToBlock(r) {
 async function insertBookingRow(client, b) {
   await client.query(
     `INSERT INTO bookings (id, name, phone, phone_key, date, time, service_id, service_name,
-       duration_minutes, slots_count, price, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       duration_minutes, slots_count, price, lang, cancel_token_hash, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
      ON CONFLICT (id) DO NOTHING`,
     [
       b.id, b.name, b.phone, normalizePhone(b.phone), b.date, b.time,
       b.serviceId || null, b.serviceName || null, b.durationMinutes || null,
-      b.slotsCount || 1, b.price || null, b.createdAt || new Date().toISOString()
+      b.slotsCount || 1, b.price || null, b.lang || null, b.cancelTokenHash || null,
+      b.createdAt || new Date().toISOString()
     ]
   );
 }
@@ -348,6 +408,22 @@ function createPgStore(databaseUrl) {
       });
     },
 
+    async findBookingByTokenHash(hash) {
+      const { rows } = await pool.query(
+        `SELECT ${BOOKING_COLUMNS} FROM bookings WHERE cancel_token_hash = $1`,
+        [hash]
+      );
+      return rows.length ? rowToBooking(rows[0]) : null;
+    },
+
+    async deleteBookingByToken(id, hash) {
+      const { rows } = await pool.query(
+        `DELETE FROM bookings WHERE id = $1 AND cancel_token_hash = $2 RETURNING ${BOOKING_COLUMNS}`,
+        [id, hash]
+      );
+      return rows.length ? rowToBooking(rows[0]) : null;
+    },
+
     async deleteBooking(id) {
       const { rowCount } = await pool.query('DELETE FROM bookings WHERE id = $1', [id]);
       return rowCount > 0;
@@ -365,6 +441,18 @@ function createPgStore(databaseUrl) {
     async deleteBlock(id) {
       const { rowCount } = await pool.query('DELETE FROM blocks WHERE id = $1', [id]);
       return rowCount > 0;
+    },
+
+    async claimState(key) {
+      const { rowCount } = await pool.query(
+        'INSERT INTO app_state (key) VALUES ($1) ON CONFLICT (key) DO NOTHING',
+        [key]
+      );
+      return rowCount > 0;
+    },
+
+    async releaseState(key) {
+      await pool.query('DELETE FROM app_state WHERE key = $1', [key]);
     },
 
     close() {

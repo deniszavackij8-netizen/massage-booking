@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Salt & Stone — массаж и спа в Батуми</title>
 <meta name="description" content="Онлайн-запись на массаж в Батуми: выберите свободное время и получите подтверждение.">
+<link rel="alternate" hreflang="ru" href="/?lang=ru">
+<link rel="alternate" hreflang="en" href="/?lang=en">
+<link rel="alternate" hreflang="ka" href="/?lang=ka">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,6 +25,7 @@
     --accent:   #c08a5c;
     --good:     #4f8a5c;
     --bad:      #b4473f;
+    --wa:       #1fa855;
 
     --bg: var(--sand-50);
     --bg-raised: #ffffff;
@@ -32,7 +36,7 @@
     --brand-soft: var(--sea-500);
 
     --font-display: 'Fraunces', Georgia, serif;
-    --font-body: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-body: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans Georgian', sans-serif;
     color-scheme: light;
   }
 
@@ -42,58 +46,79 @@
   img{max-width:100%; display:block;}
   a{color:inherit;}
   h1,h2,h3{font-family:var(--font-display); margin:0; text-wrap:balance; font-weight:500;}
+  html[lang="ka"] h1, html[lang="ka"] h2, html[lang="ka"] h3{font-family:var(--font-body); font-weight:700;}
   p{margin:0; line-height:1.6;}
+  [hidden]{display:none !important;}
   .wrap{max-width:1100px; margin:0 auto; padding-left:max(20px, env(safe-area-inset-left,0px)); padding-right:max(20px, env(safe-area-inset-right,0px));}
   .eyebrow{font-size:.78rem; letter-spacing:.14em; text-transform:uppercase; color:var(--brand); font-weight:700;}
   section{padding-block: clamp(48px, 8vw, 90px);}
+  section[id]{scroll-margin-top:80px;}
 
-  header{position:sticky; top:0; z-index:50; background:rgba(250,246,240,.88); backdrop-filter:blur(10px); border-bottom:1px solid var(--line);}
-  .nav{display:flex; align-items:center; justify-content:space-between; height:72px;}
-  .logo{font-family:var(--font-display); font-size:1.25rem; font-weight:600; display:flex; align-items:center; gap:10px;}
+  header{position:sticky; top:0; z-index:50; background:rgba(250,246,240,.92); backdrop-filter:blur(10px); border-bottom:1px solid var(--line);}
+  .nav{display:flex; align-items:center; justify-content:space-between; gap:12px; height:72px;}
+  .logo{font-family:var(--font-display); font-size:1.25rem; font-weight:600; display:flex; align-items:center; gap:10px; text-decoration:none; white-space:nowrap;}
   .logo-mark{width:32px; height:32px; border-radius:50%; background:radial-gradient(circle at 32% 30%, var(--sea-500), var(--sea-700)); flex:none;}
-  nav.links{display:flex; gap:28px; align-items:center;}
-  nav.links a{text-decoration:none; font-size:.94rem; font-weight:600; color:var(--fg-muted);}
+  nav.links{display:flex; gap:24px; align-items:center;}
+  nav.links a{text-decoration:none; font-size:.92rem; font-weight:600; color:var(--fg-muted); white-space:nowrap;}
   nav.links a:hover{color:var(--brand);}
-  .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:12px 22px; border-radius:999px; font-weight:700; font-size:.92rem; text-decoration:none; border:1px solid transparent; cursor:pointer; transition:transform .15s ease, box-shadow .15s ease;}
+  .nav-right{display:flex; align-items:center; gap:12px;}
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:12px 22px; border-radius:999px; font-weight:700; font-size:.92rem; text-decoration:none; border:1px solid transparent; cursor:pointer; transition:transform .15s ease, box-shadow .15s ease; font-family:inherit; line-height:1.2; text-align:center;}
   .btn-primary{background:var(--brand); color:#fff; box-shadow:0 8px 20px -8px rgba(79,117,104,.55);}
   .btn-primary:hover{transform:translateY(-1px);}
   .btn-primary:disabled{opacity:.55; cursor:not-allowed; transform:none;}
-  .btn-ghost{background:transparent; color:var(--fg); border-color:var(--line);}
+  .btn-ghost{background:#fff; color:var(--fg); border-color:var(--line);}
+  .btn-ghost:hover{border-color:var(--brand-soft); color:var(--brand);}
   .btn-sm{padding:9px 16px; font-size:.85rem;}
+  .btn svg{width:18px; height:18px; flex:none;}
+  .btn:focus-visible, nav.links a:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
   .burger{display:none; background:none; border:none; padding:8px; cursor:pointer;}
   .burger span{display:block; width:24px; height:2px; background:var(--fg); margin:5px 0; border-radius:2px;}
+
+  .lang-switch{display:inline-flex; border:1px solid var(--line); border-radius:999px; padding:3px; background:#fff; flex:none;}
+  .lang-switch button{border:none; background:transparent; font:inherit; font-size:.76rem; font-weight:800; letter-spacing:.04em; padding:6px 10px; min-width:36px; border-radius:999px; cursor:pointer; color:var(--fg-muted);}
+  .lang-switch button:hover{color:var(--brand);}
+  .lang-switch button.lang-active{background:var(--brand); color:#fff;}
+  .lang-switch button:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
 
   .hero{position:relative; padding-top:clamp(56px,9vw,96px); padding-bottom:clamp(40px,7vw,72px); overflow:hidden;}
   .hero::before{content:""; position:absolute; inset:0; background:radial-gradient(900px 500px at 85% -10%, rgba(111,156,141,.18), transparent 60%); z-index:0;}
   .hero-grid{position:relative; z-index:1; display:grid; grid-template-columns:1.05fr .95fr; gap:48px; align-items:center;}
   .hero h1{font-size:clamp(2.1rem, 4vw, 3.1rem); line-height:1.1;}
-  .hero h1 em{font-style:italic; color:var(--brand);}
+  .hero h1 em{font-style:italic; color:var(--brand); display:block;}
+  html[lang="ka"] .hero h1{font-size:clamp(1.8rem, 3.4vw, 2.6rem);}
+  html[lang="ka"] .hero h1 em{font-style:normal;}
   .hero p.lead{margin-top:18px; max-width:46ch; font-size:1.05rem; color:var(--fg-muted);}
   .hero-ctas{display:flex; gap:14px; margin-top:28px; flex-wrap:wrap;}
-  .hero-art{position:relative; aspect-ratio:4/5; border-radius:26px; overflow:hidden; box-shadow:0 30px 60px -24px rgba(44,40,34,.35);}
+  .hero-art{position:relative; aspect-ratio:4/5; border-radius:26px; overflow:hidden; box-shadow:0 30px 60px -24px rgba(44,40,34,.35); background:var(--sand-200);}
   .hero-art img{width:100%; height:100%; object-fit:cover;}
 
   .section-head{max-width:620px; margin-bottom:36px;}
   .section-head h2{font-size:clamp(1.7rem, 2.8vw, 2.2rem); margin-top:8px;}
   .section-head p{margin-top:12px; color:var(--fg-muted);}
 
-  /* ---------- booking ---------- */
+  /* ---------- услуги и цены ---------- */
+  #services{padding-top:clamp(24px,4vw,40px);}
+  .services-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:16px;}
+  .service-card{background:var(--bg-raised); border:1px solid var(--line); border-radius:20px; padding:22px; display:flex; flex-direction:column; gap:16px;}
+  .service-card h3{font-size:1.15rem; line-height:1.3;}
+  .service-prices{list-style:none; margin:0; padding:0; display:grid; gap:8px; flex:1; align-content:start;}
+  .service-prices li{display:flex; justify-content:space-between; align-items:baseline; gap:12px; font-size:.92rem; color:var(--fg-muted); border-bottom:1px dashed var(--line); padding-bottom:8px;}
+  .service-prices b{color:var(--fg); font-size:1.05rem;}
+  .service-card .btn{align-self:stretch;}
+  .services-msg{color:var(--fg-muted); grid-column:1/-1;}
+
+  /* ---------- запись ---------- */
   .booking-box{
     background:var(--bg-raised); border:1px solid var(--line); border-radius:26px;
     padding:clamp(24px,4vw,40px); display:grid; grid-template-columns:1fr 1fr; gap:36px;
   }
   .field{display:flex; flex-direction:column; gap:6px; margin-bottom:16px;}
   .field label{font-size:.85rem; font-weight:700; color:var(--fg-muted);}
-  .field input{
+  .field input, .field select{
     border:1px solid var(--line); border-radius:12px; padding:12px 14px; font:inherit;
-    background:#fff; color:var(--fg);
+    background:#fff; color:var(--fg); min-height:46px; width:100%;
   }
-  .field input:focus{outline:2px solid var(--brand-soft); outline-offset:1px;}
-  .field select{
-    border:1px solid var(--line); border-radius:12px; padding:12px 14px; font:inherit;
-    background:#fff; color:var(--fg);
-  }
-  .field select:focus{outline:2px solid var(--brand-soft); outline-offset:1px;}
+  .field input:focus, .field select:focus{outline:2px solid var(--brand-soft); outline-offset:1px;}
   .duration-options{display:flex; gap:10px; flex-wrap:wrap;}
   .duration-opt{
     border:1px solid var(--line); background:#fff; border-radius:12px; padding:10px 14px;
@@ -118,27 +143,52 @@
     border:none; color:#fff;
   }
   .btn-confirm:hover:not(:disabled){transform:translateY(-1px); box-shadow:0 14px 32px -8px rgba(192,138,92,.7);}
-  .btn-confirm:disabled{background:var(--sand-200); color:#a89d8c; box-shadow:none; cursor:not-allowed;}
+  .btn-confirm:disabled{background:var(--sand-200); color:#8a7f70; box-shadow:none; cursor:not-allowed;}
   .slots-label{font-size:.85rem; font-weight:700; color:var(--fg-muted); margin-bottom:10px; display:block;}
   .slots-grid{display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; min-height:52px;}
   .slot-btn{
-    border:1px solid var(--line); background:#fff; border-radius:12px; padding:10px 6px;
+    border:1px solid var(--line); background:#fff; border-radius:12px; padding:10px 6px; min-height:44px;
     font:inherit; font-weight:700; font-size:.88rem; cursor:pointer; color:var(--fg);
     transition:background .15s, border-color .15s, color .15s;
   }
   .slot-btn:hover:not(:disabled){border-color:var(--brand-soft); color:var(--brand);}
   .slot-btn.slot-selected{background:var(--brand); border-color:var(--brand); color:#fff;}
-  .slot-btn:disabled{background:var(--sand-100); color:#b7ada0; border-color:var(--sand-100); cursor:not-allowed; text-decoration:line-through;}
-  .slots-loading, .slots-error{grid-column:1/-1; font-size:.88rem; color:var(--fg-muted); margin:0;}
+  .slot-btn:disabled{background:var(--sand-100); color:#9c9183; border-color:var(--sand-100); cursor:not-allowed; text-decoration:line-through;}
+  .slots-loading, .slots-error, .slots-none{grid-column:1/-1; font-size:.88rem; color:var(--fg-muted); margin:0;}
   .booking-status{margin-top:14px; font-size:.9rem; font-weight:700; min-height:1.4em;}
   .booking-status.success{color:var(--good);}
   .booking-status.error{color:var(--bad);}
+
+  /* экран «Вы записаны» */
+  .booking-success{display:flex; flex-direction:column; gap:14px;}
+  .success-badge{width:52px; height:52px; border-radius:50%; background:var(--good); color:#fff; display:flex; align-items:center; justify-content:center;}
+  .success-badge svg{width:28px; height:28px;}
+  .booking-success h3{font-size:1.6rem;}
+  .success-text{font-size:1rem; color:var(--fg-muted);}
+  .success-actions{display:flex; flex-wrap:wrap; gap:10px;}
+  .success-hint{font-size:.85rem; color:var(--fg-muted);}
+  .success-cancel{color:var(--bad); font-weight:700; font-size:.92rem;}
+  .success-cancel:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+
+  /* «Ваши записи на этом устройстве» */
+  .my-bookings{background:var(--bg-raised); border:1px solid var(--line); border-left:4px solid var(--brand); border-radius:18px; padding:16px 20px; margin-bottom:22px;}
+  .my-bookings h3{font-size:1.05rem; margin-bottom:6px;}
+  .my-booking{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 16px; padding:10px 0; border-top:1px dashed var(--line); font-size:.92rem;}
+  .my-booking:first-of-type{border-top:none;}
+  .my-booking-actions{display:flex; gap:16px;}
+  .my-booking-actions a{color:var(--brand); font-weight:700; text-decoration:none;}
+  .my-booking-actions a.danger{color:var(--bad);}
+  .my-booking-actions a:hover{text-decoration:underline;}
+
   .booking-side{
     background:var(--stone-900); color:var(--sand-50); border-radius:20px; padding:26px;
   }
   .booking-side h3{color:#fff; font-size:1.05rem;}
   .booking-side ul{list-style:none; margin:16px 0 0; padding:0; display:grid; gap:10px; font-size:.9rem; color:#d8d2c7;}
-  .booking-side li{display:flex; justify-content:space-between; border-bottom:1px dashed rgba(255,255,255,.18); padding-bottom:8px;}
+  .booking-side li{display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 12px; border-bottom:1px dashed rgba(255,255,255,.18); padding-bottom:8px;}
+  .booking-side li b{text-align:right; white-space:nowrap; margin-left:auto;}
+  .booking-side li a{color:inherit; text-decoration:none;}
+  .booking-side li a:hover{text-decoration:underline;}
 
   .address-card{
     margin:16px 0 26px; padding:14px 16px; border-radius:14px;
@@ -159,13 +209,24 @@
   .address-map:hover{border-color:#fff; color:#fff;}
   .address-btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
 
-  footer{padding-block:28px; border-top:1px solid var(--line); text-align:center; font-size:.82rem; color:var(--fg-muted);}
+  /* плавающая кнопка WhatsApp */
+  .wa-float{
+    position:fixed; z-index:60;
+    right:max(18px, env(safe-area-inset-right,0px)); bottom:max(18px, env(safe-area-inset-bottom,0px));
+    width:58px; height:58px; border-radius:50%; background:var(--wa); color:#fff;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 12px 26px -8px rgba(0,0,0,.4); transition:transform .15s ease;
+  }
+  .wa-float:hover{transform:scale(1.06);}
+  .wa-float:focus-visible{outline:3px solid var(--accent); outline-offset:3px;}
+  .wa-float svg{width:28px; height:28px;}
 
-  @media (max-width:860px){
-    nav.links{position:fixed; inset:72px 0 auto 0; background:var(--bg); flex-direction:column; align-items:flex-start; padding:8px 20px 20px; border-bottom:1px solid var(--line); transform:translateY(-12px); opacity:0; pointer-events:none; transition:all .2s ease;}
+  footer{padding:28px 0 100px; border-top:1px solid var(--line); text-align:center; font-size:.82rem; color:var(--fg-muted);}
+
+  @media (max-width:960px){
+    nav.links{position:fixed; inset:72px 0 auto 0; background:var(--bg); flex-direction:column; align-items:stretch; gap:0; padding:8px 20px 20px; border-bottom:1px solid var(--line); transform:translateY(-12px); opacity:0; pointer-events:none; transition:all .2s ease;}
     nav.links.open{transform:translateY(0); opacity:1; pointer-events:auto;}
     nav.links a{width:100%; padding:13px 0; border-bottom:1px solid var(--line);}
-    nav.links .btn{margin-top:14px; width:100%;}
     .burger{display:block;}
     .nav-cta{display:none;}
     .hero-grid{grid-template-columns:1fr; gap:30px;}
@@ -174,7 +235,16 @@
     .slots-grid{grid-template-columns:repeat(3,1fr);}
   }
   @media (max-width:480px){
+    .logo{font-size:1.08rem; gap:8px;}
+    .logo-mark{width:26px; height:26px;}
+    .nav-right{gap:6px;}
+    .lang-switch button{padding:6px 8px; min-width:32px;}
     .slots-grid{grid-template-columns:repeat(2,1fr);}
+    .hero-ctas .btn{flex:1 1 100%;}
+  }
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto;}
+    *{transition:none !important;}
   }
 </style>
 </head>
@@ -182,31 +252,53 @@
 
 <header>
   <div class="wrap nav">
-    <div class="logo"><span class="logo-mark"></span>Salt & Stone</div>
+    <a href="/" class="logo"><span class="logo-mark" aria-hidden="true"></span>Salt & Stone</a>
     <nav class="links" id="navLinks">
-      <a href="#booking">Запись онлайн</a>
-      <a href="https://wa.me/995593370862" target="_blank" rel="noopener">WhatsApp</a>
+      <a href="#services" data-i18n="nav_services">Услуги и цены</a>
+      <a href="#booking" data-i18n="nav_book">Запись онлайн</a>
+      <a href="https://wa.me/995593370862" class="js-wa-link" target="_blank" rel="noopener">WhatsApp</a>
       <a href="https://t.me/IIgor0000007" target="_blank" rel="noopener">Telegram</a>
       <a href="https://instagram.com/massage.batumi_" target="_blank" rel="noopener">Instagram</a>
     </nav>
-    <a href="#booking" class="btn btn-primary btn-sm nav-cta">Записаться</a>
-    <button class="burger" id="burgerBtn" aria-label="Меню"><span></span><span></span><span></span></button>
+    <div class="nav-right">
+      <div class="lang-switch" role="group" data-i18n-attr="aria-label:language" aria-label="Язык">
+        <button type="button" data-lang="ru" lang="ru" aria-pressed="false">RU</button>
+        <button type="button" data-lang="en" lang="en" aria-pressed="false">EN</button>
+        <button type="button" data-lang="ka" lang="ka" aria-pressed="false">KA</button>
+      </div>
+      <a href="#booking" class="btn btn-primary btn-sm nav-cta" data-i18n="cta_book">Записаться</a>
+      <button class="burger" id="burgerBtn" type="button" aria-controls="navLinks" aria-expanded="false" data-i18n-attr="aria-label:menu" aria-label="Меню"><span></span><span></span><span></span></button>
+    </div>
   </div>
 </header>
 
+<main>
 <section class="hero">
   <div class="wrap hero-grid">
     <div>
-      <p class="eyebrow">Массаж и спа · Батуми</p>
-      <h1>Запишитесь на массаж<br><em>онлайн за минуту</em></h1>
-      <p class="lead">Выберите дату, свободное время и оставьте телефон — мы получим уведомление и подтвердим запись.</p>
+      <p class="eyebrow" data-i18n="hero_eyebrow">Массаж и спа · Батуми</p>
+      <h1><span data-i18n="hero_title_1">Запишитесь на массаж</span> <em data-i18n="hero_title_2">онлайн за минуту</em></h1>
+      <p class="lead" data-i18n="hero_lead">Выберите дату, свободное время и оставьте телефон — мы получим уведомление и подтвердим запись.</p>
       <div class="hero-ctas">
-        <a href="#booking" class="btn btn-primary">Выбрать время</a>
-        <a href="https://wa.me/995593370862" class="btn btn-ghost" target="_blank" rel="noopener">Написать в WhatsApp</a>
+        <a href="#booking" class="btn btn-primary" data-i18n="hero_cta_time">Выбрать время</a>
+        <a href="https://wa.me/995593370862" class="btn btn-ghost js-wa-link" target="_blank" rel="noopener" data-i18n="hero_cta_wa">Написать в WhatsApp</a>
       </div>
     </div>
     <div class="hero-art">
-      <img src="https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=1200&q=80" alt="Массаж спины в спа-кабинете">
+      <img src="https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=1200&q=80" alt="Массаж спины в спа-кабинете" data-i18n-attr="alt:hero_img_alt" width="1200" height="1500">
+    </div>
+  </div>
+</section>
+
+<section id="services">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow" data-i18n="services_eyebrow">Услуги и цены</p>
+      <h2 data-i18n="services_title">Наши массажи</h2>
+      <p data-i18n="services_lead">Выберите массаж — и сразу запишитесь на удобное время.</p>
+    </div>
+    <div class="services-grid" id="servicesGrid" aria-live="polite">
+      <p class="services-msg" data-i18n="services_loading">Загружаем услуги…</p>
     </div>
   </div>
 </section>
@@ -214,379 +306,118 @@
 <section id="booking">
   <div class="wrap">
     <div class="section-head">
-      <p class="eyebrow">Онлайн-запись</p>
-      <h2>Выберите удобное время</h2>
-      <p>Занятые слоты показаны серым и недоступны для выбора — двойная запись на одно время исключена.</p>
+      <p class="eyebrow" data-i18n="booking_eyebrow">Онлайн-запись</p>
+      <h2 data-i18n="booking_title">Выберите удобное время</h2>
+      <p data-i18n="booking_lead">Занятые слоты показаны серым и недоступны для выбора — двойная запись на одно время исключена.</p>
+    </div>
+
+    <div class="my-bookings" id="myBookings" hidden>
+      <h3 data-i18n="my_title">Ваши записи на этом устройстве</h3>
+      <div id="myBookingsList"></div>
     </div>
 
     <div class="booking-box">
-      <form id="bookingForm" novalidate>
-        <div class="field">
-          <label for="bookName">Имя и фамилия</label>
-          <input id="bookName" name="name" type="text" placeholder="Нино Беридзе" required maxlength="120">
-        </div>
-        <div class="field">
-          <label for="bookPhone">Номер телефона</label>
-          <input id="bookPhone" name="phone" type="tel" placeholder="+995 5xx xx xx xx" required maxlength="40">
-        </div>
-        <!-- Ловушка для ботов: поле спрятано от людей, бот его заполнит и выдаст себя -->
-        <div aria-hidden="true" style="position:absolute; left:-10000px; width:1px; height:1px; overflow:hidden;">
-          <label for="bookWebsite">Не заполняйте это поле</label>
-          <input id="bookWebsite" name="website" type="text" tabindex="-1" autocomplete="off">
-        </div>
-        <div class="field">
-          <label for="bookService">Услуга</label>
-          <select id="bookService" name="service" required>
-            <option value="" disabled selected>Выберите услугу</option>
-          </select>
-        </div>
-        <div class="field" id="durationField" hidden>
-          <span class="slots-label">Длительность</span>
-          <div class="duration-options" id="durationOptions"></div>
-        </div>
-        <div class="field">
-          <label for="bookDate">Дата сеанса</label>
-          <input id="bookDate" name="date" type="date" required>
-        </div>
-        <div class="field">
-          <span class="slots-label">Доступное время</span>
-          <div class="slots-grid" id="slotsGrid">
-            <p class="slots-loading">Загрузка расписания…</p>
+      <div>
+        <form id="bookingForm" novalidate>
+          <div class="field">
+            <label for="bookName" data-i18n="label_name">Имя и фамилия</label>
+            <input id="bookName" name="name" type="text" placeholder="Нино Беридзе" data-i18n-attr="placeholder:ph_name" required maxlength="120" autocomplete="name">
+          </div>
+          <div class="field">
+            <label for="bookPhone" data-i18n="label_phone">Номер телефона</label>
+            <input id="bookPhone" name="phone" type="tel" placeholder="+995 5xx xx xx xx" required maxlength="40" autocomplete="tel" inputmode="tel">
+          </div>
+          <!-- Ловушка для ботов: поле спрятано от людей, бот его заполнит и выдаст себя -->
+          <div aria-hidden="true" style="position:absolute; left:-10000px; width:1px; height:1px; overflow:hidden;">
+            <label for="bookWebsite">Website</label>
+            <input id="bookWebsite" name="website" type="text" tabindex="-1" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="bookService" data-i18n="label_service">Услуга</label>
+            <select id="bookService" name="service" required>
+              <option value="" disabled selected data-i18n="choose_service">Выберите услугу</option>
+            </select>
+          </div>
+          <div class="field" id="durationField" hidden>
+            <span class="slots-label" data-i18n="label_duration">Длительность</span>
+            <div class="duration-options" id="durationOptions"></div>
+          </div>
+          <div class="field">
+            <label for="bookDate" data-i18n="label_date">Дата сеанса</label>
+            <input id="bookDate" name="date" type="date" required>
+          </div>
+          <div class="field">
+            <span class="slots-label" data-i18n="label_slots">Доступное время</span>
+            <div class="slots-grid" id="slotsGrid" aria-live="polite">
+              <p class="slots-loading" data-i18n="slots_loading">Загрузка расписания…</p>
+            </div>
+          </div>
+          <div class="booking-summary" id="bookingSummary" hidden></div>
+          <button type="submit" class="btn btn-confirm" id="confirmBtn" disabled data-i18n="btn_choose">Выберите услугу, дату и время</button>
+          <p class="booking-status" id="bookingStatus" role="status"></p>
+        </form>
+
+        <div class="booking-success" id="bookingSuccess" hidden tabindex="-1">
+          <div class="success-badge" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+          </div>
+          <h3 data-i18n="success_title">Вы записаны!</h3>
+          <p class="success-text" id="successText"></p>
+          <div class="success-actions">
+            <a class="btn btn-primary" id="successIcs" href="#">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M12 14v4M10 16h4"/></svg>
+              <span data-i18n="success_calendar">Добавить в календарь</span>
+            </a>
+            <a class="btn btn-ghost" id="successGoogle" href="#" target="_blank" rel="noopener" data-i18n="success_google">Google Календарь</a>
+          </div>
+          <p class="success-hint" data-i18n="success_hint">Ссылка для отмены есть и в событии календаря. Отменить онлайн можно не позже чем за 3 часа до сеанса.</p>
+          <div class="success-actions">
+            <button type="button" class="btn btn-ghost" id="bookAgainBtn" data-i18n="success_again">Записаться ещё</button>
+            <a class="btn success-cancel" id="successCancel" href="#" data-i18n="success_cancel">Отменить запись</a>
           </div>
         </div>
-        <div class="booking-summary" id="bookingSummary" hidden></div>
-        <button type="submit" class="btn btn-confirm" id="confirmBtn" disabled>Выберите услугу, дату и время</button>
-        <p class="booking-status" id="bookingStatus"></p>
-      </form>
+      </div>
 
       <div class="booking-side">
-        <h3>Адрес</h3>
+        <h3 data-i18n="address_title">Адрес</h3>
         <div class="address-card">
           <div class="address-text" id="salonAddress">103 Gorgasali Street, Flamingo Salon</div>
           <div class="address-actions">
-            <button type="button" class="address-btn address-copy" id="copyAddressBtn" aria-live="polite">
+            <button type="button" class="address-btn address-copy" id="copyAddressBtn">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
-              <span>Скопировать</span>
+              <span id="copyAddressLabel" aria-live="polite" data-i18n="copy">Скопировать</span>
             </button>
             <a class="address-btn address-map" href="https://www.google.com/maps/search/?api=1&query=103%20Gorgasali%20Street%2C%20Batumi" target="_blank" rel="noopener">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
-              <span>На карте</span>
+              <span data-i18n="on_map">На карте</span>
             </a>
           </div>
         </div>
-        <h3>Часы работы</h3>
+        <h3 data-i18n="hours_title">Часы работы</h3>
         <ul>
-          <li><span>Пн – Пт</span><b>10:00 – 21:00</b></li>
-          <li><span>Сб</span><b>11:00 – 20:00</b></li>
-          <li><span>Вс</span><b>12:00 – 18:00</b></li>
+          <li><span data-i18n="every_day">Ежедневно</span><b>10:00 – 20:00</b></li>
         </ul>
-        <h3 style="margin-top:22px;">Связаться напрямую</h3>
+        <h3 style="margin-top:22px;" data-i18n="contact_title">Связаться напрямую</h3>
         <ul>
-          <li><span>WhatsApp</span><b>+995 593 37 08 62</b></li>
-          <li><span>Telegram</span><b>@IIgor0000007</b></li>
-          <li><span>Instagram</span><b>@massage.batumi_</b></li>
+          <li><span>WhatsApp</span><b><a href="https://wa.me/995593370862" class="js-wa-link" target="_blank" rel="noopener">+995 593 37 08 62</a></b></li>
+          <li><span>Telegram</span><b><a href="https://t.me/IIgor0000007" target="_blank" rel="noopener">@IIgor0000007</a></b></li>
+          <li><span>Instagram</span><b><a href="https://instagram.com/massage.batumi_" target="_blank" rel="noopener">@massage.batumi_</a></b></li>
         </ul>
       </div>
     </div>
   </div>
 </section>
+</main>
 
 <footer>
-  <div class="wrap">© 2026 Salt & Stone Massage & Spa · 103 Gorgasali Street, Flamingo Salon, Батуми.</div>
+  <div class="wrap">© 2026 Salt & Stone Massage & Spa · 103 Gorgasali Street, Flamingo Salon, <span data-i18n="footer_city">Батуми</span>.</div>
 </footer>
 
-<script>
-  // ---------- мобильное меню ----------
-  var burger = document.getElementById('burgerBtn');
-  var links = document.getElementById('navLinks');
-  burger.addEventListener('click', function(){ links.classList.toggle('open'); });
-  links.querySelectorAll('a').forEach(function(a){
-    a.addEventListener('click', function(){ links.classList.remove('open'); });
-  });
+<a class="wa-float js-wa-link" href="https://wa.me/995593370862" target="_blank" rel="noopener" data-i18n-attr="aria-label:wa_label|title:wa_label" aria-label="Написать в WhatsApp" title="Написать в WhatsApp">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 20.5l1.6-5.4A8.4 8.4 0 1 1 21 11.5z"/><path d="M8.5 10.5h7M8.5 13.5h4.5"/></svg>
+</a>
 
-  // ---------- копирование адреса ----------
-  (function(){
-    var btn = document.getElementById('copyAddressBtn');
-    var label = btn.querySelector('span');
-    var address = document.getElementById('salonAddress').textContent.trim();
-    var resetTimer = null;
-
-    // Запасной способ для старых браузеров и встроенных браузеров
-    // (Instagram, Facebook), где navigator.clipboard недоступен.
-    function fallbackCopy(text){
-      var ta = document.createElement('textarea');
-      ta.value = text;
-      ta.setAttribute('readonly', '');
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      ta.setSelectionRange(0, text.length);
-      var ok = false;
-      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
-      document.body.removeChild(ta);
-      return ok;
-    }
-
-    function showResult(ok){
-      clearTimeout(resetTimer);
-      if (ok){
-        btn.classList.add('copied');
-        label.textContent = 'Скопировано ✓';
-      } else {
-        label.textContent = 'Выделите и скопируйте';
-      }
-      resetTimer = setTimeout(function(){
-        btn.classList.remove('copied');
-        label.textContent = 'Скопировать';
-      }, 2000);
-    }
-
-    btn.addEventListener('click', function(){
-      if (navigator.clipboard && window.isSecureContext){
-        navigator.clipboard.writeText(address)
-          .then(function(){ showResult(true); })
-          .catch(function(){ showResult(fallbackCopy(address)); });
-      } else {
-        showResult(fallbackCopy(address));
-      }
-    });
-  })();
-
-  // ---------- онлайн-запись ----------
-  var dateInput = document.getElementById('bookDate');
-  var slotsGrid = document.getElementById('slotsGrid');
-  var form = document.getElementById('bookingForm');
-  var statusEl = document.getElementById('bookingStatus');
-  var serviceSelect = document.getElementById('bookService');
-  var durationField = document.getElementById('durationField');
-  var durationOptions = document.getElementById('durationOptions');
-  var selectedTime = null;
-  var services = [];
-  var selectedService = null;
-  var selectedDuration = null;
-  var summaryEl = document.getElementById('bookingSummary');
-  var confirmBtn = document.getElementById('confirmBtn');
-
-  function updateSummary(){
-    var date = dateInput.value;
-    var ready = selectedService && selectedDuration && date && selectedTime;
-
-    if (!ready){
-      summaryEl.hidden = true;
-      confirmBtn.disabled = true;
-      confirmBtn.textContent = 'Выберите услугу, дату и время';
-      return;
-    }
-
-    summaryEl.hidden = false;
-    summaryEl.innerHTML =
-      '<div class="summary-title">Проверьте запись</div>' +
-      '<div class="summary-row"><span>Услуга</span><b>' + selectedService.name + '</b></div>' +
-      '<div class="summary-row"><span>Длительность</span><b>' + selectedDuration.minutes + ' мин</b></div>' +
-      '<div class="summary-row"><span>Дата</span><b>' + date + '</b></div>' +
-      '<div class="summary-row"><span>Время</span><b>' + selectedTime + '</b></div>' +
-      '<div class="summary-row"><span>Стоимость</span><b>' + selectedDuration.price + '₾</b></div>';
-
-    confirmBtn.disabled = false;
-    confirmBtn.textContent = 'Подтвердить запись — ' + selectedDuration.price + '₾';
-  }
-
-  function todayStr(){
-    var d = new Date();
-    var offset = d.getTimezoneOffset();
-    var local = new Date(d.getTime() - offset * 60000);
-    return local.toISOString().slice(0, 10);
-  }
-
-  dateInput.min = todayStr();
-  dateInput.value = todayStr();
-  // Запись открыта максимум на 60 дней вперёд (то же ограничение стоит на сервере).
-  (function(){
-    var d = new Date(todayStr() + 'T00:00:00Z');
-    d.setUTCDate(d.getUTCDate() + 60);
-    dateInput.max = d.toISOString().slice(0, 10);
-  })();
-
-  // ---------- услуги и длительность ----------
-  function renderDurationOptions(service){
-    durationOptions.innerHTML = '';
-    selectedDuration = null;
-
-    if (!service || service.durations.length === 0){
-      durationField.hidden = true;
-      return;
-    }
-
-    durationField.hidden = false;
-
-    service.durations.forEach(function(d, i){
-      var btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'duration-opt';
-      btn.textContent = d.minutes + ' мин — ' + d.price + '₾';
-      btn.addEventListener('click', function(){
-        durationOptions.querySelectorAll('.duration-opt').forEach(function(b){ b.classList.remove('duration-selected'); });
-        btn.classList.add('duration-selected');
-        selectedDuration = d;
-        loadSlots(dateInput.value);
-        updateSummary();
-      });
-      durationOptions.appendChild(btn);
-      // Если вариант длительности один — выбираем его сразу.
-      if (service.durations.length === 1){
-        btn.classList.add('duration-selected');
-        selectedDuration = d;
-      }
-    });
-  }
-
-  function loadServices(){
-    fetch('/api/services')
-      .then(function(res){ return res.json(); })
-      .then(function(data){
-        services = data.services || [];
-        services.forEach(function(s){
-          var opt = document.createElement('option');
-          opt.value = s.id;
-          opt.textContent = s.name;
-          serviceSelect.appendChild(opt);
-        });
-      })
-      .catch(function(){
-        var opt = document.createElement('option');
-        opt.value = '';
-        opt.textContent = 'Не удалось загрузить услуги';
-        serviceSelect.appendChild(opt);
-      });
-  }
-
-  serviceSelect.addEventListener('change', function(){
-    selectedService = services.find(function(s){ return s.id === serviceSelect.value; }) || null;
-    renderDurationOptions(selectedService);
-    loadSlots(dateInput.value);
-    updateSummary();
-  });
-
-  loadServices();
-
-  // ---------- слоты времени ----------
-  function renderSlots(slots){
-    slotsGrid.innerHTML = '';
-    selectedTime = null;
-    slots.forEach(function(slot){
-      var btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'slot-btn';
-      btn.textContent = slot.time;
-      btn.disabled = slot.booked;
-      btn.addEventListener('click', function(){
-        slotsGrid.querySelectorAll('.slot-btn').forEach(function(b){ b.classList.remove('slot-selected'); });
-        btn.classList.add('slot-selected');
-        selectedTime = slot.time;
-        updateSummary();
-      });
-      slotsGrid.appendChild(btn);
-    });
-  }
-
-  function loadSlots(date){
-    slotsGrid.innerHTML = '<p class="slots-loading">Загрузка расписания…</p>';
-    selectedTime = null;
-    updateSummary();
-    var slotsNeeded = selectedDuration ? selectedDuration.slots : 1;
-    fetch('/api/slots?date=' + encodeURIComponent(date) + '&slots=' + slotsNeeded)
-      .then(function(res){ return res.json(); })
-      .then(function(data){ renderSlots(data.slots || []); })
-      .catch(function(){
-        slotsGrid.innerHTML = '<p class="slots-error">Не удалось загрузить расписание. Обновите страницу.</p>';
-      });
-  }
-
-  dateInput.addEventListener('change', function(){ loadSlots(dateInput.value); updateSummary(); });
-  loadSlots(dateInput.value);
-  updateSummary();
-
-  form.addEventListener('submit', function(e){
-    e.preventDefault();
-    statusEl.textContent = '';
-    statusEl.className = 'booking-status';
-
-    var name = document.getElementById('bookName').value.trim();
-    var phone = document.getElementById('bookPhone').value.trim();
-    var date = dateInput.value;
-
-    if (!name || !phone){
-      statusEl.textContent = 'Заполните имя и телефон.';
-      statusEl.classList.add('error');
-      return;
-    }
-    if (!selectedService){
-      statusEl.textContent = 'Выберите услугу.';
-      statusEl.classList.add('error');
-      return;
-    }
-    if (!selectedDuration){
-      statusEl.textContent = 'Выберите длительность.';
-      statusEl.classList.add('error');
-      return;
-    }
-    if (!selectedTime){
-      statusEl.textContent = 'Выберите время сеанса.';
-      statusEl.classList.add('error');
-      return;
-    }
-
-    confirmBtn.disabled = true;
-    confirmBtn.textContent = 'Отправляем…';
-
-    fetch('/api/book', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: name,
-        phone: phone,
-        date: date,
-        time: selectedTime,
-        serviceId: selectedService.id,
-        durationMinutes: selectedDuration.minutes,
-        website: document.getElementById('bookWebsite').value
-      })
-    })
-      .then(function(res){ return res.json().then(function(data){ return { ok: res.ok, data: data }; }); })
-      .then(function(result){
-        if (!result.ok){
-          statusEl.textContent = result.data.error || 'Не удалось записаться.';
-          statusEl.classList.add('error');
-          loadSlots(date);
-        } else {
-          statusEl.textContent = 'Готово! Вы записаны на ' + date + ' в ' + selectedTime +
-            ' (' + selectedService.name + ', ' + selectedDuration.minutes + ' мин). Мы свяжемся для подтверждения.';
-          statusEl.classList.add('success');
-          form.reset();
-          dateInput.value = date;
-          selectedService = null;
-          selectedDuration = null;
-          durationField.hidden = true;
-          durationOptions.innerHTML = '';
-          loadSlots(date);
-          updateSummary();
-        }
-      })
-      .catch(function(){
-        statusEl.textContent = 'Ошибка соединения с сервером.';
-        statusEl.classList.add('error');
-      })
-      .finally(function(){
-        confirmBtn.disabled = false;
-        if (selectedService && selectedDuration && selectedTime){
-          updateSummary();
-        } else {
-          confirmBtn.textContent = 'Выберите услугу, дату и время';
-        }
-      });
-  });
-</script>
-
+<script src="/i18n.js"></script>
+<script src="/app.js"></script>
 </body>
 </html>

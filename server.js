@@ -10,12 +10,11 @@ const PORT = process.env.PORT || 3000;
 // автоматический сбор отпечатка стека для атакующего.
 app.disable('x-powered-by');
 
-// Сколько прокси стоит перед сервером (Render, nginx, Cloudflare...).
-// На Render всегда есть как минимум один прокси (балансировщик), поэтому
-// там нужно TRUST_PROXY=1 — иначе все посетители видны серверу с одного
-// и того же IP балансировщика, и блокировка по IP заблокирует всех сразу.
-// Число = количество прокси-«прыжков»; доверяем только им, поэтому подделать
-// свой IP через заголовок X-Forwarded-For посетитель не сможет.
+// Сколько прокси стоит перед сервером. На Render цепочка такая:
+// Cloudflare → балансировщик → внутренний прокси, поэтому там TRUST_PROXY=3.
+// Доверяем ровно этому числу «прыжков», поэтому подделать свой IP через
+// заголовок X-Forwarded-For посетитель не сможет.
+// Проверка настройки: /api/admin/whoami должен показать ваш настоящий IP.
 const TRUST_PROXY_HOPS = Number.parseInt(process.env.TRUST_PROXY || '0', 10);
 if (Number.isInteger(TRUST_PROXY_HOPS) && TRUST_PROXY_HOPS > 0) {
   app.set('trust proxy', TRUST_PROXY_HOPS);
@@ -37,6 +36,14 @@ const CHAT_IDS = (process.env.CHAT_ID || '')
   .map((id) => id.trim())
   .filter(Boolean);
 
+// Секрет для утренней сводки (её вызывает внешний сервис cron-job.org).
+// Без него (или если он короче 20 символов) сводка просто выключена.
+const CRON_SECRET = (process.env.CRON_SECRET || '').trim();
+
+// Адрес сайта для ссылок в календаре (необязательно — по умолчанию
+// берётся из запроса). Пример: https://massage-booking-1.onrender.com
+const PUBLIC_URL = (process.env.PUBLIC_URL || '').trim().replace(/\/+$/, '');
+
 // Хранилище: база данных (если задан DATABASE_URL) или JSON-файлы.
 const { createStore, normalizePhone } = require('./storage');
 const DATABASE_URL = (process.env.DATABASE_URL || '').trim();
@@ -49,21 +56,41 @@ function asyncHandler(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 }
 
-// Рабочие часы салона — слоты с шагом в 1 час.
-// Поменяйте список, если часы работы другие.
+// Ответ с ошибкой: code — для сайта (он покажет текст на языке посетителя),
+// error — понятный текст по-русски (для логов и на всякий случай).
+function fail(res, status, code, message) {
+  return res.status(status).json({ error: message, code });
+}
+
+// ---------------------------------------------------------------------------
+// Салон: часы работы, услуги, адрес
+// ---------------------------------------------------------------------------
+
+const SALON_ADDRESS = '103 Gorgasali Street, Flamingo Salon, Batumi';
+
+// Салон работает каждый день с 10:00 до 20:00. Сетка — по часу, поэтому
+// последний часовой сеанс начинается в 19:00 и заканчивается в 20:00.
+const OPEN_TIME = '10:00';
+const CLOSE_TIME = '20:00';
 const SLOTS = [
   '10:00', '11:00', '12:00', '13:00', '14:00',
-  '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'
+  '15:00', '16:00', '17:00', '18:00', '19:00'
 ];
+
+const SUPPORTED_LANGS = ['ru', 'en', 'ka'];
+function normalizeLang(value) {
+  return SUPPORTED_LANGS.includes(value) ? value : 'ru';
+}
 
 // Услуги и варианты длительности. Сетка времени — часовая, поэтому
 // длительность указывается в «слотах» (1 слот = 1 час). Для сеанса
-// 90 минут (массаж в 4 руки) резервируем 2 часовых слота — это проще
-// и надёжнее, чем дробить сетку на получасовые интервалы.
+// 90 минут (массаж в 4 руки) резервируем 2 часовых слота.
+// name — по-русски (для Telegram и админки), names — для сайта на 3 языках.
 const SERVICES = [
   {
     id: 'combo',
     name: 'Общий массаж (комбинированный)',
+    names: { ru: 'Общий массаж (комбинированный)', en: 'General massage (combined)', ka: 'ზოგადი მასაჟი (კომბინირებული)' },
     durations: [
       { minutes: 60, slots: 1, price: 100 },
       { minutes: 120, slots: 2, price: 160 }
@@ -72,26 +99,31 @@ const SERVICES = [
   {
     id: 'full-body',
     name: 'Массаж всего тела',
+    names: { ru: 'Массаж всего тела', en: 'Full body massage', ka: 'მთელი სხეულის მასაჟი' },
     durations: [{ minutes: 60, slots: 1, price: 100 }]
   },
   {
     id: 'anticellulite',
     name: 'Антицеллюлитный массаж',
+    names: { ru: 'Антицеллюлитный массаж', en: 'Anti-cellulite massage', ka: 'ანტიცელულიტური მასაჟი' },
     durations: [{ minutes: 60, slots: 1, price: 80 }]
   },
   {
     id: 'sport',
     name: 'Спортивный массаж',
+    names: { ru: 'Спортивный массаж', en: 'Sports massage', ka: 'სპორტული მასაჟი' },
     durations: [{ minutes: 60, slots: 1, price: 130 }]
   },
   {
     id: 'lymph',
     name: 'Лимфодренажный массаж',
+    names: { ru: 'Лимфодренажный массаж', en: 'Lymphatic drainage massage', ka: 'ლიმფოდრენაჟული მასაჟი' },
     durations: [{ minutes: 60, slots: 1, price: 90 }]
   },
   {
     id: 'four-hands',
     name: 'Массаж в 4 руки',
+    names: { ru: 'Массаж в 4 руки', en: 'Four-hand massage', ka: 'მასაჟი ოთხი ხელით' },
     durations: [
       { minutes: 60, slots: 1, price: 160 },
       { minutes: 90, slots: 2, price: 200 }
@@ -100,11 +132,13 @@ const SERVICES = [
   {
     id: 'neck',
     name: 'Массаж ШВЗ',
+    names: { ru: 'Массаж ШВЗ (шея и плечи)', en: 'Neck & shoulder massage', ka: 'კისრისა და მხრების მასაჟი' },
     durations: [{ minutes: 30, slots: 1, price: 30 }]
   },
   {
     id: 'back',
     name: 'Массаж спины',
+    names: { ru: 'Массаж спины', en: 'Back massage', ka: 'ზურგის მასაჟი' },
     durations: [{ minutes: 60, slots: 1, price: 70 }]
   }
 ];
@@ -116,6 +150,12 @@ function findService(serviceId) {
 function findDuration(service, minutes) {
   if (!service) return null;
   return service.durations.find((d) => d.minutes === Number(minutes)) || null;
+}
+
+function serviceNameFor(serviceId, lang, fallback) {
+  const s = findService(serviceId);
+  if (!s) return fallback || '';
+  return s.names[lang] || s.name;
 }
 
 // Множество занятых индексов слотов для конкретной даты — с учётом того,
@@ -149,26 +189,41 @@ function blockedSlotIndexes(dateBlocks) {
   return blocked;
 }
 
-// Салон физически находится в Батуми — считаем «сейчас» по времени
-// Грузии (Asia/Tbilisi), а не по часовому поясу сервера, чтобы
-// отсечение прошедших слотов не зависело от того, где задеплоен сервер.
+// ---------------------------------------------------------------------------
+// Время салона (Батуми)
+// ---------------------------------------------------------------------------
+
+// Считаем «сейчас» по времени Грузии (Asia/Tbilisi), а не по часовому поясу
+// сервера, чтобы отсечение прошедших слотов не зависело от того, где сервер.
 const SALON_TIMEZONE = 'Asia/Tbilisi';
 
 // Минимальное время до начала сеанса, на которое ещё разрешена запись.
 const MIN_LEAD_MINUTES = 60;
 
-function getSalonNow() {
-  const fmt = new Intl.DateTimeFormat('en-CA', {
-    timeZone: SALON_TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  });
+// До какого момента клиент может сам отменить запись по ссылке.
+const CANCEL_DEADLINE_HOURS = 3;
+
+const salonPartsFmt = new Intl.DateTimeFormat('en-CA', {
+  timeZone: SALON_TIMEZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false
+});
+
+function salonParts(date) {
   const parts = {};
-  fmt.formatToParts(new Date()).forEach((p) => { parts[p.type] = p.value; });
+  salonPartsFmt.formatToParts(date).forEach((p) => { parts[p.type] = p.value; });
+  // В некоторых версиях ICU полночь приходит как "24".
+  if (parts.hour === '24') parts.hour = '00';
+  return parts;
+}
+
+function getSalonNow() {
+  const parts = salonParts(new Date());
   return {
     date: `${parts.year}-${parts.month}-${parts.day}`,
     minutes: Number(parts.hour) * 60 + Number(parts.minute)
@@ -180,6 +235,23 @@ function timeToMinutes(time) {
   return h * 60 + m;
 }
 
+function minutesToTime(total) {
+  const h = Math.floor(total / 60) % 24;
+  const m = total % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+// Дата и время по часам салона → момент времени (мс с 1970 года, UTC).
+function salonLocalToEpoch(date, time) {
+  const [y, mo, d] = date.split('-').map(Number);
+  const [h, mi] = time.split(':').map(Number);
+  const guess = Date.UTC(y, mo - 1, d, h, mi);
+  const p = salonParts(new Date(guess));
+  const asUtc = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour), Number(p.minute), Number(p.second));
+  const offsetMs = asUtc - guess; // смещение пояса салона от UTC в этот момент
+  return guess - offsetMs;
+}
+
 // Слот считается «слишком поздним для записи», если дата уже прошла,
 // либо это сегодняшний день и до начала слота осталось меньше часа.
 function isSlotTooSoon(date, time, salonNow) {
@@ -189,7 +261,7 @@ function isSlotTooSoon(date, time, salonNow) {
 }
 
 // Запись не дальше чем на 60 дней вперёд — иначе бот мог бы забивать
-// записями 2030-й, 2040-й год... и раздувать файл с записями до бесконечности.
+// записями 2030-й, 2040-й год... и раздувать базу до бесконечности.
 const MAX_DAYS_AHEAD = 60;
 
 function isDateTooFar(date, salonNow) {
@@ -197,6 +269,22 @@ function isDateTooFar(date, salonNow) {
   const limit = new Date(Date.UTC(y, m - 1, d + MAX_DAYS_AHEAD)).toISOString().slice(0, 10);
   return date > limit;
 }
+
+// «суббота, 18 октября» — для сообщений в Telegram.
+function formatDateRu(date) {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Intl.DateTimeFormat('ru-RU', {
+    timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long'
+  }).format(new Date(Date.UTC(y, m - 1, d)));
+}
+
+function bookingEndTime(b) {
+  return minutesToTime(timeToMinutes(b.time) + (Number(b.durationMinutes) || 60));
+}
+
+// ---------------------------------------------------------------------------
+// Защита от спама в записи
+// ---------------------------------------------------------------------------
 
 // Номер телефона сравниваем только по цифрам (normalizePhone из storage.js),
 // чтобы "+995 555 12 34 56" и "995555123456" считались одним номером.
@@ -228,17 +316,36 @@ function registerGlobalBooking() {
   globalBookingTimestamps.push(Date.now());
 }
 
-// Ограничиваем размер тела запроса — защита от примитивного DoS
-// большими телами запроса и от переполнения диска логами/ошибками.
+// ---------------------------------------------------------------------------
+// Общие middleware: размер запроса, защитные заголовки
+// ---------------------------------------------------------------------------
+
+// Ограничиваем размер тела запроса — защита от примитивного DoS.
 app.use(express.json({ limit: '15kb' }));
 
-// Базовые защитные HTTP-заголовки (без установки отдельного пакета helmet,
-// чтобы не плодить лишние зависимости для небольшого проекта).
+// Политика безопасности контента (CSP): браузеру разрешено выполнять только
+// скрипты с нашего же сайта. Даже если кто-то сумеет вставить на страницу
+// чужой <script> или onclick=…, браузер его просто не запустит.
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com",
+  "img-src 'self' data: https://images.unsplash.com",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'none'"
+].join('; ');
+
 app.use((req, res, next) => {
+  res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Referrer-Policy', 'no-referrer-when-downgrade');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   // Браузер будет открывать сайт только по HTTPS (на localhost по http игнорируется).
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   // Ответы API и админки (имена и телефоны клиентов) не кешируем —
@@ -252,13 +359,17 @@ app.use((req, res, next) => {
 // Некорректный JSON в теле запроса не должен приводить к утечке
 // внутреннего стека ошибок express — отвечаем аккуратным 400.
 app.use((err, req, res, next) => {
-  if (err && err.type === 'entity.parse.failed') {
-    return res.status(400).json({ error: 'Некорректный формат запроса' });
+  if (err && (err.type === 'entity.parse.failed' || err.type === 'entity.too.large')) {
+    return fail(res, 400, 'bad_request', 'Некорректный формат запроса');
   }
   return next(err);
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ---------------------------------------------------------------------------
+// Проверка входных данных
+// ---------------------------------------------------------------------------
 
 function isValidDate(value) {
   if (typeof value !== 'string') return false; // ?date=a&date=b приходит массивом
@@ -302,13 +413,20 @@ function isValidPhone(value) {
   return digitsOnly.length >= 6 && digitsOnly.length <= 20;
 }
 
-// ---------- простая защита от спама: лимит запросов по IP ----------
+// Токен отмены: 32 случайных байта в base64url — 43 символа [A-Za-z0-9_-].
+function isValidToken(value) {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value);
+}
 
-// Фабрика лимитера: скользящее окно на N запросов за M миллисекунд,
-// отдельный счётчик на каждый IP. Этого достаточно, чтобы бот не мог
-// в одну секунду занять спамом все слоты на месяц вперёд; для защиты
-// от действительно распределённых атак (много разных IP) нужен уже
-// внешний сервис (Cloudflare и т.п.), но это закрывает типовой случай.
+function hashToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+// ---------------------------------------------------------------------------
+// Лимиты запросов по IP
+// ---------------------------------------------------------------------------
+
+// Скользящее окно на N запросов за M миллисекунд, отдельный счётчик на IP.
 function createRateLimiter({ windowMs, max, message }) {
   const hits = new Map(); // ip -> массив таймстампов запросов в текущем окне
 
@@ -329,7 +447,7 @@ function createRateLimiter({ windowMs, max, message }) {
 
     if (timestamps.length >= max) {
       res.set('Retry-After', String(Math.ceil(windowMs / 1000)));
-      return res.status(429).json({ error: message });
+      return fail(res, 429, 'rate_limited', message);
     }
 
     timestamps.push(now);
@@ -345,23 +463,33 @@ const bookLimiter = createRateLimiter({
   message: 'Слишком много попыток записи подряд. Подождите немного и попробуйте снова.'
 });
 
-// Общий лимит на чтение расписания — защита от массового сканирования
-// всех дат подряд ботом (не мешает обычному человеку листать календарь).
+// Чтение расписания — защита от массового сканирования всех дат ботом.
 const slotsLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   max: 60,
   message: 'Слишком много запросов. Подождите немного.'
 });
 
-// ---------- защита админ-панели (HTTP Basic Auth + защита от перебора) ----------
+// Отмена записи / календарь по секретной ссылке.
+const tokenLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: 'Слишком много запросов. Подождите немного.'
+});
 
-// Сравнение строк постоянного времени — обычное `===` даёт мизерную, но
-// измеримую разницу во времени в зависимости от того, на каком символе
-// нашлось несовпадение, и теоретически позволяет подбирать пароль по
-// одному символу через замеры времени ответа. crypto.timingSafeEqual
-// работает только для буферов одинаковой длины, поэтому для буферов
-// разной длины сравниваем против самого себя (чтобы не выдавать длину
-// таймингом) и честно возвращаем false.
+// Утренняя сводка: её вызывает только cron-job.org, пару раз в день.
+const cronLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  message: 'Слишком много запросов.'
+});
+
+// ---------------------------------------------------------------------------
+// Защита админ-панели (HTTP Basic Auth + защита от перебора)
+// ---------------------------------------------------------------------------
+
+// Сравнение строк постоянного времени — обычное `===` теоретически позволяет
+// подбирать пароль по одному символу через замеры времени ответа.
 function timingSafeStringEqual(a, b) {
   const bufA = Buffer.from(String(a), 'utf8');
   const bufB = Buffer.from(String(b), 'utf8');
@@ -372,12 +500,9 @@ function timingSafeStringEqual(a, b) {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
-// Защита от перебора пароля: 5 неудачных попыток подряд с одного IP —
-// и дальнейшие попытки блокируются на 20 минут. Храним счётчики в памяти
-// процесса (этого достаточно для одного небольшого сайта; при перезапуске
-// сервера счётчики сбрасываются — это осознанный компромисс простоты).
+// 5 неудачных попыток подряд с одного IP — блокировка на 20 минут.
 const MAX_LOGIN_ATTEMPTS = 5;
-const LOGIN_LOCKOUT_MS = 20 * 60 * 1000; // 20 минут
+const LOGIN_LOCKOUT_MS = 20 * 60 * 1000;
 
 const loginAttemptsByIp = new Map(); // ip -> { count, lockedUntil }
 
@@ -387,9 +512,7 @@ function getLoginState(ip) {
 
 // Атака ботнетом (тысячи разных IP по 4 попытки) обходит блокировку по IP.
 // Блокировать вход для всех нельзя — тогда бот запрёт админку и владельцу.
-// Поэтому при всплеске неудачных входов со всего интернета просто шлём
-// предупреждение в Telegram (не чаще раза в 30 минут). От самого подбора
-// защищает длинный случайный пароль: перебрать его ботнетом нереально.
+// Поэтому при всплеске неудачных входов просто шлём предупреждение в Telegram.
 const GLOBAL_FAIL_WINDOW_MS = 10 * 60 * 1000;
 const GLOBAL_FAIL_ALERT_THRESHOLD = 30;
 const GLOBAL_ALERT_COOLDOWN_MS = 30 * 60 * 1000;
@@ -417,7 +540,7 @@ function registerFailedLogin(ip) {
   state.count += 1;
   if (state.count >= MAX_LOGIN_ATTEMPTS) {
     state.lockedUntil = Date.now() + LOGIN_LOCKOUT_MS;
-    state.count = 0; // следующий отсчёт из 5 попыток начнётся после разблокировки
+    state.count = 0;
     console.warn(`Админка: IP ${ip} заблокирован на 20 минут после ${MAX_LOGIN_ATTEMPTS} неудачных попыток`);
   }
   loginAttemptsByIp.set(ip, state);
@@ -428,8 +551,6 @@ function clearLoginAttempts(ip) {
   loginAttemptsByIp.delete(ip);
 }
 
-// Периодически подчищаем карту, чтобы она не росла бесконечно от
-// случайных/разовых IP (боты, сканеры), у которых не было успешного входа.
 setInterval(() => {
   const now = Date.now();
   for (const [ip, state] of loginAttemptsByIp.entries()) {
@@ -485,22 +606,33 @@ function basicAuth(req, res, next) {
   return res.status(401).send('Требуется авторизация');
 }
 
-// ---------- публичное API ----------
+// ---------------------------------------------------------------------------
+// Публичное API
+// ---------------------------------------------------------------------------
 
-// GET /api/services — список услуг с вариантами длительности и цен.
+// GET /api/health — лёгкая проверка «сервер жив» (без обращения к базе).
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true });
+});
+
+// GET /api/services — услуги, цены, сетка времени и часы работы.
 app.get('/api/services', (req, res) => {
-  res.json({ services: SERVICES });
+  res.json({
+    services: SERVICES,
+    slots: SLOTS,
+    hours: { open: OPEN_TIME, close: CLOSE_TIME },
+    cancelDeadlineHours: CANCEL_DEADLINE_HOURS
+  });
 });
 
 // GET /api/slots?date=YYYY-MM-DD&slots=1|2
-// Возвращает список слотов на указанную дату с пометкой, какие уже заняты
-// (с учётом того, сколько часовых слотов подряд нужно выбранной услуге).
+// Список слотов на дату с пометкой, какие недоступны.
 app.get('/api/slots', slotsLimiter, asyncHandler(async (req, res) => {
   const { date } = req.query;
   const slotsNeeded = Math.min(4, Math.max(1, Math.floor(Number(req.query.slots)) || 1));
 
   if (!date || !isValidDate(date)) {
-    return res.status(400).json({ error: 'Укажите корректную дату в формате YYYY-MM-DD' });
+    return fail(res, 400, 'bad_date', 'Укажите корректную дату в формате YYYY-MM-DD');
   }
 
   const [dateBookings, dateBlocks] = await Promise.all([
@@ -513,10 +645,6 @@ app.get('/api/slots', slotsLimiter, asyncHandler(async (req, res) => {
   const salonNow = getSalonNow();
 
   const slots = SLOTS.map((time, index) => {
-    // Слот недоступен, если: весь день заблокирован администратором,
-    // дата/время уже прошли (или до начала осталось меньше часа),
-    // он сам (или любой из следующих slotsNeeded-1) занят записью или
-    // заблокирован вручную, либо слотов просто не хватает до конца дня.
     let booked = false;
     if (dayBlocked) {
       booked = true;
@@ -538,10 +666,13 @@ app.get('/api/slots', slotsLimiter, asyncHandler(async (req, res) => {
   return res.json({ date, slots, dayBlocked });
 }));
 
-// POST /api/book  { name, phone, date, time, serviceId, durationMinutes }
-// Создаёт запись, если нужные слоты свободны, сохраняет её в JSON и шлёт уведомление в Telegram.
+// POST /api/book  { name, phone, date, time, serviceId, durationMinutes, lang }
+// Создаёт запись, если нужные слоты свободны, и шлёт уведомление в Telegram.
+// В ответе — секретный токен для отмены записи (выдаётся один раз,
+// в базе хранится только его хеш).
 app.post('/api/book', bookLimiter, asyncHandler(async (req, res) => {
   const { name, phone, date, time, serviceId, durationMinutes, website } = req.body || {};
+  const lang = normalizeLang((req.body || {}).lang);
 
   // «Ловушка для ботов» (honeypot): поле website спрятано от людей на
   // странице, но простые боты заполняют все поля подряд. Отвечаем боту
@@ -552,39 +683,41 @@ app.post('/api/book', bookLimiter, asyncHandler(async (req, res) => {
   }
 
   if (!name || !phone || !date || !time || !serviceId || !durationMinutes) {
-    return res.status(400).json({ error: 'Заполните имя, телефон, дату, время и выберите услугу' });
+    return fail(res, 400, 'bad_fields', 'Заполните имя, телефон, дату, время и выберите услугу');
   }
   if (!isValidName(name)) {
-    return res.status(400).json({ error: 'Укажите корректное имя (от 2 до 120 символов)' });
+    return fail(res, 400, 'bad_name', 'Укажите корректное имя (от 2 до 120 символов)');
   }
   if (!isValidPhone(phone)) {
-    return res.status(400).json({ error: 'Укажите корректный номер телефона' });
+    return fail(res, 400, 'bad_phone', 'Укажите корректный номер телефона');
   }
   if (!isValidDate(date)) {
-    return res.status(400).json({ error: 'Некорректная дата' });
+    return fail(res, 400, 'bad_date', 'Некорректная дата');
   }
   if (isDateTooFar(date, getSalonNow())) {
-    return res.status(400).json({ error: `Запись открыта не больше чем на ${MAX_DAYS_AHEAD} дней вперёд` });
+    return fail(res, 400, 'too_far', `Запись открыта не больше чем на ${MAX_DAYS_AHEAD} дней вперёд`);
   }
 
   const startIndex = typeof time === 'string' ? SLOTS.indexOf(time) : -1;
   if (startIndex === -1) {
-    return res.status(400).json({ error: 'Некорректное время сеанса' });
+    return fail(res, 400, 'bad_time', 'Некорректное время сеанса');
   }
 
-  const service = findService(serviceId);
-  const duration = findService(serviceId) && findDuration(service, durationMinutes);
+  const service = typeof serviceId === 'string' ? findService(serviceId) : null;
+  const duration = service && findDuration(service, durationMinutes);
   if (!service || !duration) {
-    return res.status(400).json({ error: 'Некорректная услуга или длительность' });
+    return fail(res, 400, 'bad_service', 'Некорректная услуга или длительность');
   }
 
   if (startIndex + duration.slots > SLOTS.length) {
-    return res.status(400).json({ error: 'Для такой длительности не хватает времени до конца рабочего дня. Выберите время пораньше.' });
+    return fail(res, 400, 'not_enough_time', 'Для такой длительности не хватает времени до конца рабочего дня. Выберите время пораньше.');
   }
 
   if (isSlotTooSoon(date, time, getSalonNow())) {
-    return res.status(409).json({ error: 'Это время уже прошло или наступает меньше чем через час. Выберите другое время.' });
+    return fail(res, 409, 'too_soon', 'Это время уже прошло или наступает меньше чем через час. Выберите другое время.');
   }
+
+  const cancelToken = crypto.randomBytes(32).toString('base64url');
 
   // Проверка свободного времени и сохранение — внутри «замка» на дату:
   // пока идёт эта запись, вторая запись на тот же день ждёт своей очереди,
@@ -593,33 +726,32 @@ app.post('/api/book', bookLimiter, asyncHandler(async (req, res) => {
     const [dateBlocks, dateBookings] = await Promise.all([tx.blocksForDate(), tx.bookingsForDate()]);
 
     if (isDayBlocked(dateBlocks)) {
-      return { status: 409, error: 'В этот день запись закрыта. Выберите другую дату.' };
+      return { status: 409, code: 'day_closed', error: 'В этот день запись закрыта. Выберите другую дату.' };
     }
 
     const blockedByAdmin = blockedSlotIndexes(dateBlocks);
     const occupied = occupiedSlotIndexes(dateBookings);
     for (let i = startIndex; i < startIndex + duration.slots; i += 1) {
       if (occupied.has(i) || blockedByAdmin.has(i)) {
-        return { status: 409, error: 'Это время (или часть выбранной длительности) уже занято или заблокировано. Выберите другое.' };
+        return { status: 409, code: 'slot_taken', error: 'Это время (или часть выбранной длительности) уже занято или заблокировано. Выберите другое.' };
       }
     }
 
-    // Не больше MAX_ACTIVE_BOOKINGS_PER_PHONE будущих записей на один номер —
-    // чтобы один человек/бот не мог занять полрасписания на свой телефон.
+    // Не больше MAX_ACTIVE_BOOKINGS_PER_PHONE будущих записей на один номер.
     const activeForPhone = await tx.countActiveForPhone(getSalonNow().date);
     if (activeForPhone >= MAX_ACTIVE_BOOKINGS_PER_PHONE) {
       return {
         status: 409,
+        code: 'phone_limit',
         error: 'На этот номер уже есть несколько активных записей. Для новой записи свяжитесь с нами в WhatsApp или Telegram.'
       };
     }
 
-    // Общий «предохранитель» от ботнета: если за последний час со всего
-    // интернета пришло подозрительно много записей — новые временно не
-    // принимаем и предупреждаем владельца в Telegram.
+    // Общий «предохранитель» от ботнета.
     if (!globalBookingGuardAllows()) {
       return {
         status: 429,
+        code: 'busy',
         error: 'Онлайн-запись временно перегружена. Пожалуйста, напишите нам в WhatsApp или Telegram.'
       };
     }
@@ -635,6 +767,8 @@ app.post('/api/book', bookLimiter, asyncHandler(async (req, res) => {
       durationMinutes: duration.minutes,
       slotsCount: duration.slots,
       price: duration.price,
+      lang,
+      cancelTokenHash: hashToken(cancelToken),
       createdAt: new Date().toISOString()
     };
     await tx.insertBooking(newBooking);
@@ -642,38 +776,268 @@ app.post('/api/book', bookLimiter, asyncHandler(async (req, res) => {
   });
 
   if (result.error) {
-    return res.status(result.status).json({ error: result.error });
+    return fail(res, result.status, result.code, result.error);
   }
 
   const { booking } = result;
   registerGlobalBooking();
 
   try {
-    await sendTelegramNotification(booking);
+    await sendTelegramText(formatNewBookingMessage(booking));
   } catch (err) {
     // Запись уже сохранена и слот занят — ошибка Telegram не должна
     // мешать клиенту увидеть успешную запись. Логируем для отладки.
     console.error('Telegram: не удалось отправить уведомление —', err.message);
   }
 
-  return res.json({ success: true, booking });
+  // Клиенту — только то, что нужно для экрана «Вы записаны» и календаря.
+  return res.json({
+    success: true,
+    booking: {
+      date: booking.date,
+      time: booking.time,
+      serviceId: booking.serviceId,
+      durationMinutes: booking.durationMinutes,
+      price: booking.price
+    },
+    cancelToken
+  });
 }));
 
-async function sendTelegramNotification(booking) {
-  const serviceLine = booking.serviceName
-    ? `, Услуга: ${booking.serviceName} (${booking.durationMinutes} мин, ${booking.price}₾)`
-    : '';
+// ---------- отмена записи клиентом по секретной ссылке ----------
 
-  const text =
-    `Новая запись! Имя: ${booking.name}, Телефон: ${booking.phone}, ` +
-    `Время: ${booking.date} ${booking.time}${serviceLine}`;
+function cancelDeadlineEpoch(booking) {
+  return salonLocalToEpoch(booking.date, booking.time) - CANCEL_DEADLINE_HOURS * 60 * 60 * 1000;
+}
 
-  await sendTelegramText(text);
+function publicBookingView(booking) {
+  const deadline = cancelDeadlineEpoch(booking);
+  return {
+    booking: {
+      date: booking.date,
+      time: booking.time,
+      serviceId: booking.serviceId,
+      durationMinutes: booking.durationMinutes,
+      price: booking.price
+    },
+    canCancel: Date.now() <= deadline,
+    cancelDeadline: new Date(deadline).toISOString()
+  };
+}
+
+// POST /api/booking/lookup { token } — показать запись по ссылке отмены.
+// Токен передаём в теле POST-запроса, а не в адресе, чтобы он не оседал
+// в логах серверов и истории браузера.
+app.post('/api/booking/lookup', tokenLimiter, asyncHandler(async (req, res) => {
+  const token = (req.body || {}).token;
+  if (!isValidToken(token)) {
+    return fail(res, 404, 'not_found', 'Запись не найдена');
+  }
+  const booking = await store.findBookingByTokenHash(hashToken(token));
+  if (!booking) {
+    return fail(res, 404, 'not_found', 'Запись не найдена');
+  }
+  return res.json(publicBookingView(booking));
+}));
+
+// POST /api/booking/cancel { token } — клиент отменяет свою запись.
+app.post('/api/booking/cancel', tokenLimiter, asyncHandler(async (req, res) => {
+  const token = (req.body || {}).token;
+  if (!isValidToken(token)) {
+    return fail(res, 404, 'not_found', 'Запись не найдена');
+  }
+  const hash = hashToken(token);
+  const booking = await store.findBookingByTokenHash(hash);
+  if (!booking) {
+    return fail(res, 404, 'not_found', 'Запись не найдена');
+  }
+  if (Date.now() > cancelDeadlineEpoch(booking)) {
+    return fail(res, 409, 'too_late', `Отменить онлайн можно не позже чем за ${CANCEL_DEADLINE_HOURS} часа до сеанса.`);
+  }
+
+  const deleted = await store.deleteBookingByToken(booking.id, hash);
+  if (!deleted) {
+    return fail(res, 404, 'not_found', 'Запись не найдена');
+  }
+
+  try {
+    await sendTelegramText(formatCancelledMessage(deleted));
+  } catch (err) {
+    console.error('Telegram: не удалось отправить уведомление об отмене —', err.message);
+  }
+
+  return res.json({ success: true });
+}));
+
+// ---------- «Добавить в календарь» (.ics) ----------
+
+// Экранирование текста по стандарту iCalendar (RFC 5545).
+function icsEscape(text) {
+  return String(text)
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\r?\n/g, '\\n');
+}
+
+// Строки длиннее 75 байт по стандарту переносятся. Режем по байтам UTF-8,
+// не разрывая многобайтовые буквы (кириллица, грузинский).
+function icsFold(line) {
+  const out = [];
+  let current = '';
+  let currentBytes = 0;
+  let limit = 75;
+  for (const ch of line) {
+    const bytes = Buffer.byteLength(ch, 'utf8');
+    if (currentBytes + bytes > limit) {
+      out.push(current);
+      current = ' ';
+      currentBytes = 1;
+      limit = 75;
+    }
+    current += ch;
+    currentBytes += bytes;
+  }
+  out.push(current);
+  return out.join('\r\n');
+}
+
+function icsDate(epochMs) {
+  return new Date(epochMs).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+}
+
+const ICS_TEXT = {
+  ru: { title: 'Массаж — Salt & Stone', min: 'мин', address: 'Адрес', cancel: 'Отменить запись (не позже чем за 3 часа)', reminder: 'Скоро массаж в Salt & Stone' },
+  en: { title: 'Massage — Salt & Stone', min: 'min', address: 'Address', cancel: 'Cancel booking (at least 3 hours before)', reminder: 'Your massage at Salt & Stone is coming up' },
+  ka: { title: 'მასაჟი — Salt & Stone', min: 'წთ', address: 'მისამართი', cancel: 'ჩაწერის გაუქმება (სეანსამდე არაუგვიანეს 3 საათისა)', reminder: 'მალე მასაჟი Salt & Stone-ში' }
+};
+
+// Адрес сайта для ссылки отмены. Берём из PUBLIC_URL или из самого
+// запроса (с проверкой, что заголовок Host выглядит как обычный домен).
+function siteOrigin(req) {
+  if (PUBLIC_URL) return PUBLIC_URL;
+  const host = String(req.get('host') || '');
+  if (!/^[A-Za-z0-9.-]+(:\d+)?$/.test(host)) return '';
+  const proto = req.protocol === 'http' ? 'http' : 'https';
+  return `${proto}://${host}`;
+}
+
+// GET /api/booking/calendar.ics?token=…&lang=ru
+app.get('/api/booking/calendar.ics', tokenLimiter, asyncHandler(async (req, res) => {
+  const { token } = req.query;
+  if (!isValidToken(token)) {
+    return res.status(404).type('text/plain').send('Not found');
+  }
+  const booking = await store.findBookingByTokenHash(hashToken(token));
+  if (!booking) {
+    return res.status(404).type('text/plain').send('Not found');
+  }
+
+  const lang = SUPPORTED_LANGS.includes(req.query.lang) ? req.query.lang : normalizeLang(booking.lang);
+  const T = ICS_TEXT[lang];
+  const start = salonLocalToEpoch(booking.date, booking.time);
+  const end = start + (Number(booking.durationMinutes) || 60) * 60 * 1000;
+  const origin = siteOrigin(req);
+  const serviceName = serviceNameFor(booking.serviceId, lang, booking.serviceName);
+
+  const descriptionLines = [
+    `${serviceName}, ${booking.durationMinutes} ${T.min}, ${booking.price}₾`,
+    `${T.address}: ${SALON_ADDRESS}`
+  ];
+  if (origin) descriptionLines.push(`${T.cancel}: ${origin}/cancel.html#${token}`);
+
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Salt & Stone//Booking//RU',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:${booking.id}@salt-and-stone`,
+    `DTSTAMP:${icsDate(Date.now())}`,
+    `DTSTART:${icsDate(start)}`,
+    `DTEND:${icsDate(end)}`,
+    `SUMMARY:${icsEscape(T.title)}`,
+    `LOCATION:${icsEscape(SALON_ADDRESS)}`,
+    `DESCRIPTION:${icsEscape(descriptionLines.join('\n'))}`,
+    'BEGIN:VALARM',
+    'TRIGGER:-PT2H',
+    'ACTION:DISPLAY',
+    `DESCRIPTION:${icsEscape(T.reminder)}`,
+    'END:VALARM',
+    'END:VEVENT',
+    'END:VCALENDAR'
+  ];
+
+  res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="salt-and-stone-massage.ics"');
+  return res.send(`${lines.map(icsFold).join('\r\n')}\r\n`);
+}));
+
+// ---------------------------------------------------------------------------
+// Сообщения в Telegram
+// ---------------------------------------------------------------------------
+
+const LANG_LABEL = { ru: 'русский', en: 'английский', ka: 'грузинский' };
+
+function bookingLines(b) {
+  return [
+    `👤 ${b.name}`,
+    `📞 ${b.phone}`,
+    `📅 ${formatDateRu(b.date)}, ${b.time}–${bookingEndTime(b)}`,
+    `💆 ${b.serviceName} (${b.durationMinutes} мин, ${b.price}₾)`
+  ];
+}
+
+function formatNewBookingMessage(b) {
+  const lines = ['🆕 Новая запись!', ...bookingLines(b)];
+  if (b.lang && b.lang !== 'ru') lines.push(`🌐 Сайт на языке: ${LANG_LABEL[b.lang]} — клиенту удобнее писать на нём`);
+  return lines.join('\n');
+}
+
+function formatCancelledMessage(b) {
+  return ['❌ Клиент сам отменил запись — время снова свободно', ...bookingLines(b)].join('\n');
+}
+
+function pluralRu(n, one, few, many) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+}
+
+function formatDailySummary(date, bookings, blocks) {
+  const header = `☀️ Доброе утро! Записи на сегодня, ${formatDateRu(date)}:`;
+  const dayBlock = blocks.find((b) => b.time === null);
+  if (dayBlock) {
+    return `${header}\n\n⛔ Весь день закрыт${dayBlock.note ? ` (${dayBlock.note})` : ''}.`;
+  }
+
+  const lines = [header, ''];
+  const sorted = [...bookings].sort((a, b) => a.time.localeCompare(b.time));
+  if (sorted.length === 0) {
+    lines.push('На сегодня записей нет.');
+  } else {
+    sorted.forEach((b) => {
+      lines.push(`🕐 ${b.time}–${bookingEndTime(b)} · ${b.serviceName} (${b.durationMinutes} мин, ${b.price}₾)`);
+      const langNote = b.lang && b.lang !== 'ru' ? ` · ${b.lang.toUpperCase()}` : '';
+      lines.push(`     ${b.name}, ${b.phone}${langNote}`);
+    });
+    const total = sorted.reduce((sum, b) => sum + (Number(b.price) || 0), 0);
+    lines.push('');
+    lines.push(`Всего: ${sorted.length} ${pluralRu(sorted.length, 'запись', 'записи', 'записей')} на ${total}₾`);
+  }
+
+  const closedHours = blocks.filter((b) => b.time !== null).map((b) => b.time).sort();
+  if (closedHours.length) {
+    lines.push(`Закрытые часы: ${closedHours.join(', ')}`);
+  }
+  return lines.join('\n');
 }
 
 // Текст отправляется без parse_mode, поэтому имя клиента вроде
-// "<b>..." или "*...*" не может сломать разметку сообщения — оно
-// приходит в Telegram как обычный текст.
+// "<b>..." или "*...*" не может сломать разметку сообщения.
 async function sendTelegramText(text) {
   if (!BOT_TOKEN || CHAT_IDS.length === 0) {
     console.warn('BOT_TOKEN/CHAT_ID не настроены — уведомление в Telegram пропущено.');
@@ -681,10 +1045,6 @@ async function sendTelegramText(text) {
   }
 
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
-
-  // Отправляем каждому получателю отдельно. Если один из адресов
-  // ошибётся (например, человек ещё не написал боту), это не должно
-  // помешать отправке остальным — поэтому ошибки собираем, а не прерываем цикл.
   const errors = [];
 
   for (const chatId of CHAT_IDS) {
@@ -692,7 +1052,8 @@ async function sendTelegramText(text) {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text })
+        body: JSON.stringify({ chat_id: chatId, text }),
+        signal: AbortSignal.timeout(10000)
       });
 
       if (!response.ok) {
@@ -709,23 +1070,58 @@ async function sendTelegramText(text) {
   }
 }
 
-// ---------- защищённое API админ-панели ----------
+// ---------------------------------------------------------------------------
+// Утренняя сводка (вызывается сервисом cron-job.org)
+// ---------------------------------------------------------------------------
 
-// GET /api/admin/bookings — список всех записей, новые сверху.
+// GET /api/cron/daily-summary?key=СЕКРЕТ
+// Отправляет в Telegram список записей на сегодня — не больше одного раза
+// в день, сколько бы раз её ни вызвали (поэтому в cron-job.org можно
+// поставить несколько попыток подряд на случай, если сервер «спит»).
+app.get('/api/cron/daily-summary', cronLimiter, asyncHandler(async (req, res) => {
+  if (CRON_SECRET.length < 20) {
+    return fail(res, 503, 'disabled', 'Утренняя сводка не настроена: задайте CRON_SECRET');
+  }
+  const key = typeof req.query.key === 'string' ? req.query.key : String(req.get('x-cron-key') || '');
+  if (!timingSafeStringEqual(key, CRON_SECRET)) {
+    return fail(res, 403, 'forbidden', 'Неверный ключ');
+  }
+
+  const today = getSalonNow().date;
+  const stateKey = `daily-summary:${today}`;
+  const claimed = await store.claimState(stateKey);
+  if (!claimed) {
+    return res.json({ ok: true, sent: false, reason: 'already_sent_today' });
+  }
+
+  try {
+    const [bookings, blocks] = await Promise.all([store.bookingsForDate(today), store.blocksForDate(today)]);
+    await sendTelegramText(formatDailySummary(today, bookings, blocks));
+  } catch (err) {
+    // Не получилось — снимаем отметку, чтобы следующая попытка отправила сводку.
+    await store.releaseState(stateKey).catch(() => {});
+    throw err;
+  }
+
+  return res.json({ ok: true, sent: true });
+}));
+
+// ---------------------------------------------------------------------------
+// Защищённое API админ-панели
+// ---------------------------------------------------------------------------
+
 app.get('/api/admin/bookings', basicAuth, asyncHandler(async (req, res) => {
   res.json({ bookings: await store.allBookings() });
 }));
 
-// DELETE /api/admin/bookings/:id — отменить запись и освободить слот.
 app.delete('/api/admin/bookings/:id', basicAuth, asyncHandler(async (req, res) => {
   const deleted = await store.deleteBooking(String(req.params.id));
   if (!deleted) {
-    return res.status(404).json({ error: 'Запись не найдена' });
+    return fail(res, 404, 'not_found', 'Запись не найдена');
   }
   return res.json({ success: true });
 }));
 
-// GET /api/admin/blocks — список всех блокировок (весь день или отдельные часы).
 app.get('/api/admin/blocks', basicAuth, asyncHandler(async (req, res) => {
   res.json({ blocks: await store.allBlocks() });
 }));
@@ -736,19 +1132,16 @@ app.post('/api/admin/blocks', basicAuth, asyncHandler(async (req, res) => {
   const { date, time, note } = req.body || {};
 
   if (!date || !isValidDate(date)) {
-    return res.status(400).json({ error: 'Укажите корректную дату' });
+    return fail(res, 400, 'bad_date', 'Укажите корректную дату');
   }
-
   if (note !== undefined && note !== null && typeof note !== 'string') {
-    return res.status(400).json({ error: 'Некорректный комментарий' });
+    return fail(res, 400, 'bad_note', 'Некорректный комментарий');
   }
   const normalizedTime = time ? String(time) : null;
   if (normalizedTime !== null && !SLOTS.includes(normalizedTime)) {
-    return res.status(400).json({ error: 'Некорректное время. Оставьте поле пустым, чтобы заблокировать весь день.' });
+    return fail(res, 400, 'bad_time', 'Некорректное время. Оставьте поле пустым, чтобы заблокировать весь день.');
   }
 
-  // createBlock вернёт null, если точно такая блокировка (та же дата +
-  // то же время/весь день) уже есть — дубликаты не создаём.
   const block = await store.createBlock({
     id: crypto.randomUUID(),
     date,
@@ -757,24 +1150,21 @@ app.post('/api/admin/blocks', basicAuth, asyncHandler(async (req, res) => {
     createdAt: new Date().toISOString()
   });
   if (!block) {
-    return res.status(409).json({ error: 'Такая блокировка уже существует.' });
+    return fail(res, 409, 'duplicate', 'Такая блокировка уже существует.');
   }
 
   return res.json({ success: true, block });
 }));
 
-// DELETE /api/admin/blocks/:id — снять блокировку.
 app.delete('/api/admin/blocks/:id', basicAuth, asyncHandler(async (req, res) => {
   const deleted = await store.deleteBlock(String(req.params.id));
   if (!deleted) {
-    return res.status(404).json({ error: 'Блокировка не найдена' });
+    return fail(res, 404, 'not_found', 'Блокировка не найдена');
   }
   return res.json({ success: true });
 }));
 
-// GET /api/admin/whoami — диагностика: какой IP сервер видит у вас.
-// Нужна, чтобы проверить настройку TRUST_PROXY: здесь должен быть ваш
-// настоящий IP (как на сайте 2ip.ru), а не адрес балансировщика Render.
+// GET /api/admin/whoami — какой IP сервер видит у вас (проверка TRUST_PROXY).
 app.get('/api/admin/whoami', basicAuth, (req, res) => {
   res.json({
     ipSeenByServer: clientIp(req),
@@ -782,6 +1172,9 @@ app.get('/api/admin/whoami', basicAuth, (req, res) => {
     xForwardedFor: req.headers['x-forwarded-for'] || null
   });
 });
+
+// Неизвестные адреса /api/... — аккуратный JSON вместо стандартной страницы express.
+app.use('/api', (req, res) => fail(res, 404, 'not_found', 'Не найдено'));
 
 // Страница админ-панели (защищена тем же Basic Auth).
 app.use('/admin', basicAuth, express.static(path.join(__dirname, 'admin')));
@@ -791,13 +1184,12 @@ app.use('/admin', basicAuth, express.static(path.join(__dirname, 'admin')));
 app.use((err, req, res, next) => {
   console.error('Необработанная ошибка:', err);
   if (res.headersSent) return next(err);
-  return res.status(500).json({ error: 'Внутренняя ошибка сервера. Попробуйте позже.' });
+  return fail(res, 500, 'server_error', 'Внутренняя ошибка сервера. Попробуйте позже.');
 });
 
 // Сначала готовим хранилище (создаём таблицы в базе, если их ещё нет),
 // и только потом принимаем посетителей. Если база недоступна — сервер
-// не запускается: на Render тогда останется работать предыдущая версия
-// сайта, а в логах будет понятная причина.
+// не запускается: на Render тогда останется работать предыдущая версия.
 store.init()
   .then(() => {
     app.listen(PORT, () => {
@@ -816,6 +1208,9 @@ store.init()
       }
       if (!BOT_TOKEN || CHAT_IDS.length === 0) {
         console.warn('Внимание: BOT_TOKEN/CHAT_ID не заданы в .env — уведомления в Telegram работать не будут.');
+      }
+      if (CRON_SECRET.length < 20) {
+        console.warn('Утренняя сводка выключена: задайте CRON_SECRET (не короче 20 символов).');
       }
     });
   })
