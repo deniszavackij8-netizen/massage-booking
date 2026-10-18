@@ -9,6 +9,8 @@
 <link rel="alternate" hreflang="en" href="/?lang=en">
 <link rel="alternate" hreflang="ka" href="/?lang=ka">
 
+<script src="/motion-init.js"></script>
+<link rel="preload" as="image" href="/media/hero-poster.jpg" fetchpriority="high">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -264,6 +266,13 @@
     .slots-grid{grid-template-columns:repeat(2,1fr);}
     .hero-ctas .btn{flex:1 1 100%;}
   }
+  /* ---- Анимации (Anime.js, файл animations.js) ----
+     Класс motion ставит motion-init.js: то, что анимации плавно покажут,
+     прячется заранее, чтобы не мигало. Если анимации не запустились
+     за 1,5 с, класс снимается и всё видно как обычно. */
+  .motion .m-in, .motion .m-reveal{opacity:0;}
+  .service-card{transition:translate .3s ease, box-shadow .3s ease, border-color .3s ease;}
+  .service-card:hover{translate:0 -4px; box-shadow:0 22px 40px -24px rgba(44,40,34,.4); border-color:var(--brand-soft);}
   @media (prefers-reduced-motion:reduce){
     html{scroll-behavior:auto;}
     *{transition:none !important;}
@@ -298,15 +307,15 @@
 <section class="hero">
   <div class="wrap hero-grid">
     <div>
-      <p class="eyebrow" data-i18n="hero_eyebrow">Массаж · Батуми</p>
-      <h1><span data-i18n="hero_title_1">Запишитесь на массаж</span> <em data-i18n="hero_title_2">онлайн за минуту</em></h1>
-      <p class="lead" data-i18n="hero_lead">Выберите дату, свободное время и оставьте телефон — мы получим уведомление и подтвердим запись.</p>
+      <p class="eyebrow m-in" data-i18n="hero_eyebrow">Массаж · Батуми</p>
+      <h1 class="m-in"><span data-i18n="hero_title_1">Запишитесь на массаж</span> <em data-i18n="hero_title_2">онлайн за минуту</em></h1>
+      <p class="lead m-in" data-i18n="hero_lead">Выберите дату, свободное время и оставьте телефон — мы получим уведомление и подтвердим запись.</p>
       <div class="hero-ctas">
-        <a href="#booking" class="btn btn-primary" data-i18n="hero_cta_time">Выбрать время</a>
-        <a href="https://wa.me/995593370862" class="btn btn-ghost js-wa-link" target="_blank" rel="noopener" data-i18n="hero_cta_wa">Написать в WhatsApp</a>
+        <a href="#booking" class="btn btn-primary m-in" data-i18n="hero_cta_time">Выбрать время</a>
+        <a href="https://wa.me/995593370862" class="btn btn-ghost js-wa-link m-in" target="_blank" rel="noopener" data-i18n="hero_cta_wa">Написать в WhatsApp</a>
       </div>
     </div>
-    <div class="hero-art" role="img" aria-label="Массаж спины" data-i18n-attr="aria-label:hero_img_alt">
+    <div class="hero-art m-in" role="img" aria-label="Массаж спины" data-i18n-attr="aria-label:hero_img_alt">
       <!-- Видео-фон: без звука, по кругу. Запускает его app.js (и не запускает,
            если у посетителя включена экономия трафика или «уменьшить движение»). -->
       <video id="heroVideo" class="hero-video" muted loop playsinline preload="none"
@@ -324,7 +333,7 @@
 
 <section id="services">
   <div class="wrap">
-    <div class="section-head">
+    <div class="section-head m-reveal">
       <p class="eyebrow" data-i18n="services_eyebrow">Услуги и цены</p>
       <h2 data-i18n="services_title">Наши массажи</h2>
       <p data-i18n="services_lead">Выберите массаж — и сразу запишитесь на удобное время.</p>
@@ -337,7 +346,7 @@
 
 <section id="booking">
   <div class="wrap">
-    <div class="section-head">
+    <div class="section-head m-reveal">
       <p class="eyebrow" data-i18n="booking_eyebrow">Онлайн-запись</p>
       <h2 data-i18n="booking_title">Выберите удобное время</h2>
       <p data-i18n="booking_lead">Занятые слоты показаны серым и недоступны для выбора — двойная запись на одно время исключена.</p>
@@ -348,7 +357,7 @@
       <div id="myBookingsList"></div>
     </div>
 
-    <div class="booking-box">
+    <div class="booking-box m-reveal">
       <div>
         <form id="bookingForm" novalidate>
           <div class="field">
@@ -449,11 +458,13 @@
   <div class="wrap">© 2026 Salt & Stone Massage · 103 Gorgasali Street, Flamingo Salon, <span data-i18n="footer_city">Батуми</span>.</div>
 </footer>
 
-<a class="wa-float js-wa-link" href="https://wa.me/995593370862" target="_blank" rel="noopener" data-i18n-attr="aria-label:wa_label|title:wa_label" aria-label="Написать в WhatsApp" title="Написать в WhatsApp">
+<a class="wa-float js-wa-link m-in" href="https://wa.me/995593370862" target="_blank" rel="noopener" data-i18n-attr="aria-label:wa_label|title:wa_label" aria-label="Написать в WhatsApp" title="Написать в WhatsApp">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 20.5l1.6-5.4A8.4 8.4 0 1 1 21 11.5z"/><path d="M8.5 10.5h7M8.5 13.5h4.5"/></svg>
 </a>
 
 <script src="/i18n.js"></script>
 <script src="/app.js"></script>
+<script src="/vendor/anime-4.5.0.min.js"></script>
+<script src="/animations.js"></script>
 </body>
 </html>

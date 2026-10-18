@@ -440,6 +440,11 @@ app.use((err, req, res, next) => {
 // по запросу Range — это нужно iPhone, без этого Safari видео не покажет.)
 app.use('/media', express.static(path.join(__dirname, 'public', 'media'), { maxAge: '1d' }));
 
+// Библиотека анимаций (Anime.js) лежит у нас, а не на чужом CDN — так её
+// разрешает политика безопасности (CSP), и чужой сервер не может подменить
+// код. Версия в имени файла, поэтому браузер может хранить её долго.
+app.use('/vendor', express.static(path.join(__dirname, 'public', 'vendor'), { maxAge: '30d', immutable: true }));
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------------------------------------------------------------------------
