@@ -93,6 +93,18 @@ function rateKey(req) {
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 
+// Слишком простой пароль (короткий или из списка самых частых) — админку
+// не открываем вовсе, пока его не заменят. Боты перебирают такие первыми.
+const COMMON_PASSWORDS = new Set([
+  '123456', '12345678', '123456789', '1234567890', '111111', '000000', '123123',
+  'password', 'password1', 'qwerty', 'qwerty123', 'admin', 'admin123', 'administrator',
+  'letmein', 'welcome', 'iloveyou', 'massage', 'massage123', 'saltandstone'
+]);
+function isWeakPassword(p) {
+  return p.length < 12 || COMMON_PASSWORDS.has(p.toLowerCase()) || /^(.)\1+$/.test(p) || /^\d+$/.test(p);
+}
+const ADMIN_PASSWORD_WEAK = Boolean(ADMIN_PASSWORD) && isWeakPassword(ADMIN_PASSWORD);
+
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 
 // Можно указать несколько получателей через запятую, например:
@@ -653,11 +665,45 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000).unref();
 
+// Уведомление в Telegram о входе в админку с нового адреса (замена второго
+// фактора): если пароль когда-нибудь утечёт, вы сразу увидите чужой вход.
+// Один и тот же адрес повторно не сообщаем 12 часов.
+const ADMIN_LOGIN_NOTICE_MS = 12 * 60 * 60 * 1000;
+const adminLoginSeen = new Map(); // ключ IP/подсети -> время последнего уведомления
+
+function describeBrowser(ua) {
+  ua = String(ua || '');
+  const browser = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /YaBrowser/.test(ua) ? 'Яндекс Браузер'
+    : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'неизвестный браузер';
+  const os = /iPhone|iPad/.test(ua) ? 'iPhone/iPad' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows'
+    : /Mac OS X/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : 'неизвестное устройство';
+  return `${browser}, ${os}`;
+}
+
+function notifyAdminLogin(req, key) {
+  const now = Date.now();
+  const last = adminLoginSeen.get(key);
+  if (last && now - last < ADMIN_LOGIN_NOTICE_MS) return;
+  adminLoginSeen.set(key, now);
+  if (adminLoginSeen.size > 1000) adminLoginSeen.clear();
+  sendTelegramText(
+    '🔐 Вход в админку\n' +
+    `IP: ${clientIp(req)}\n` +
+    `Устройство: ${describeBrowser(req.headers['user-agent'])}\n` +
+    'Если это были не вы — сразу смените ADMIN_PASSWORD на Render (Environment) и сохраните.'
+  ).catch((err) => console.error('Telegram (вход в админку):', err.message));
+}
+
 function basicAuth(req, res, next) {
   if (!ADMIN_PASSWORD) {
     return res
       .status(503)
       .send('Админ-панель не настроена: задайте ADMIN_PASSWORD в файле .env и перезапустите сервер.');
+  }
+  if (ADMIN_PASSWORD_WEAK) {
+    return res
+      .status(503)
+      .send('Пароль админки слишком простой. Задайте в ADMIN_PASSWORD сложный пароль (не меньше 12 символов, буквы и цифры) и перезапустите сервер.');
   }
 
   const ip = rateKey(req);
@@ -690,6 +736,7 @@ function basicAuth(req, res, next) {
 
     if (userOk && passOk) {
       clearLoginAttempts(ip);
+      notifyAdminLogin(req, ip);
       return next();
     }
   }
@@ -1300,6 +1347,8 @@ store.init()
       }
       if (!ADMIN_PASSWORD) {
         console.warn('Внимание: ADMIN_PASSWORD не задан в .env — админ-панель будет недоступна (503).');
+      } else if (ADMIN_PASSWORD_WEAK) {
+        console.warn('Внимание: ADMIN_PASSWORD слишком простой — админ-панель закрыта (503), пока его не заменят на сложный.');
       }
       if (!BOT_TOKEN || CHAT_IDS.length === 0) {
         console.warn('Внимание: BOT_TOKEN/CHAT_ID не заданы в .env — уведомления в Telegram работать не будут.');
