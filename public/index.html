@@ -132,6 +132,15 @@
     background:#fff; color:var(--fg); min-height:46px; width:100%;
   }
   .field input:focus, .field select:focus{outline:2px solid var(--brand-soft); outline-offset:1px;}
+  .phone-input{
+    display:flex; align-items:center; border:1px solid var(--line); border-radius:12px;
+    background:#fff; min-height:46px; cursor:text;
+  }
+  .phone-input:focus-within{outline:2px solid var(--brand-soft); outline-offset:1px;}
+  .phone-prefix{padding:0 2px 0 14px; font-weight:700; color:var(--fg); user-select:none;}
+  .field .phone-input input{border:none; border-radius:0 12px 12px 0; padding-left:4px; min-height:44px; background:transparent;}
+  .field .phone-input input:focus{outline:none;}
+  .field-hint{font-size:.78rem; color:var(--fg-muted);}
   .duration-options{display:flex; gap:10px; flex-wrap:wrap;}
   .duration-opt{
     border:1px solid var(--line); background:#fff; border-radius:12px; padding:10px 14px;
@@ -348,7 +357,11 @@
           </div>
           <div class="field">
             <label for="bookPhone" data-i18n="label_phone">Номер телефона</label>
-            <input id="bookPhone" name="phone" type="tel" placeholder="+995 5xx xx xx xx" required maxlength="40" autocomplete="tel" inputmode="tel">
+            <div class="phone-input" id="bookPhoneWrap">
+              <span class="phone-prefix" aria-hidden="true">+</span>
+              <input id="bookPhone" name="phone" type="tel" placeholder="995 5xx xx xx xx" required maxlength="24" autocomplete="tel" inputmode="tel" aria-describedby="bookPhoneHint">
+            </div>
+            <span class="field-hint" id="bookPhoneHint" data-i18n="phone_hint">Номер с кодом страны: 995 — Грузия, 7 — Россия</span>
           </div>
           <!-- Ловушка для ботов: поле спрятано от людей, бот его заполнит и выдаст себя -->
           <div aria-hidden="true" style="position:absolute; left:-10000px; width:1px; height:1px; overflow:hidden;">

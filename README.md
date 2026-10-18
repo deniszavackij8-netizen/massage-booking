@@ -39,7 +39,7 @@ massage-booking/
 | `ADMIN_USER`, `ADMIN_PASSWORD` | логин и пароль админки |
 | `BOT_TOKEN`, `CHAT_ID` | Telegram-бот и получатели (несколько — через запятую) |
 | `DATABASE_URL` | строка подключения к базе Neon (без неё записи пропадают на бесплатном Render) |
-| `TRUST_PROXY` | на Render — `3` (проверка: `/api/admin/whoami` показывает ваш настоящий IP) |
+| `TRUST_PROXY` | на Render — `3` (любое число больше 0: сервер доверяет только внутренней сети Render и Cloudflare; проверка: `/api/admin/whoami` показывает ваш настоящий IP) |
 | `CRON_SECRET` | секрет для утренней сводки (пусто — сводка выключена) |
 | `PUBLIC_URL` | необязательно: адрес сайта для ссылок в календаре |
 

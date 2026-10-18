@@ -606,6 +606,30 @@
 
   $('bookAgainBtn').addEventListener('click', resetToForm);
 
+  // ---------- телефон: «+» стоит отдельно и не стирается ----------
+  // В само поле вводятся только цифры (пробелы, «-» и скобки тоже можно).
+  // Если человек вставил номер с «+» или «00» в начале — убираем их, плюс
+  // и так стоит. Грузинский мобильный без кода (9 цифр на 5) дополняем 995.
+  var phoneInput = $('bookPhone');
+  function cleanPhone(v) {
+    v = String(v || '').replace(/[^0-9()\-\s]/g, '').replace(/^\s+/, '');
+    if (/^00/.test(v)) v = v.replace(/^00\s*/, '');
+    return v.slice(0, 24);
+  }
+  function phoneDigits() { return phoneInput.value.replace(/\D/g, ''); }
+  phoneInput.addEventListener('input', function () {
+    var cleaned = cleanPhone(phoneInput.value);
+    if (cleaned !== phoneInput.value) phoneInput.value = cleaned;
+  });
+  phoneInput.addEventListener('blur', function () {
+    var d = phoneDigits();
+    if (d.length === 9 && d.charAt(0) === '5') phoneInput.value = '995 ' + phoneInput.value.trim();
+    else phoneInput.value = phoneInput.value.trim();
+  });
+  $('bookPhoneWrap').addEventListener('click', function (e) {
+    if (e.target !== phoneInput) phoneInput.focus();
+  });
+
   // ---------- отправка записи ----------
   form.addEventListener('submit', function (e) {
     e.preventDefault();
@@ -613,10 +637,15 @@
     setStatus('', null);
 
     var name = $('bookName').value.trim();
-    var phone = $('bookPhone').value.trim();
+    var phoneRaw = cleanPhone(phoneInput.value).trim();
+    var phoneLen = phoneRaw.replace(/\D/g, '').length;
+    if (phoneLen === 9 && /^5/.test(phoneRaw.replace(/\D/g, ''))) { phoneRaw = '995 ' + phoneRaw; phoneLen = 12; }
+    phoneInput.value = phoneRaw;
+    var phone = '+' + phoneRaw;
     var date = dateInput.value;
 
-    if (!name || !phone) { setStatus('error', function () { return t('val_name_phone'); }); return; }
+    if (!name || !phoneRaw) { setStatus('error', function () { return t('val_name_phone'); }); return; }
+    if (phoneLen < 7 || phoneLen > 15) { setStatus('error', function () { return t('val_phone'); }); phoneInput.focus(); return; }
     if (!selectedService) { setStatus('error', function () { return t('val_service'); }); return; }
     if (!selectedDuration) { setStatus('error', function () { return t('val_duration'); }); return; }
     if (!selectedTime) { setStatus('error', function () { return t('val_time'); }); return; }

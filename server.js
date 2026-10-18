@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
+const net = require('net');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,18 +11,83 @@ const PORT = process.env.PORT || 3000;
 // автоматический сбор отпечатка стека для атакующего.
 app.disable('x-powered-by');
 
-// Сколько прокси стоит перед сервером. На Render цепочка такая:
-// Cloudflare → балансировщик → внутренний прокси, поэтому там TRUST_PROXY=3.
-// Доверяем ровно этому числу «прыжков», поэтому подделать свой IP через
-// заголовок X-Forwarded-For посетитель не сможет.
-// Проверка настройки: /api/admin/whoami должен показать ваш настоящий IP.
-const TRUST_PROXY_HOPS = Number.parseInt(process.env.TRUST_PROXY || '0', 10);
-if (Number.isInteger(TRUST_PROXY_HOPS) && TRUST_PROXY_HOPS > 0) {
-  app.set('trust proxy', TRUST_PROXY_HOPS);
+// ---------------------------------------------------------------------------
+// Настоящий IP посетителя (на нём держатся блокировка админки и все лимиты)
+// ---------------------------------------------------------------------------
+//
+// На Render запрос идёт так: посетитель → Cloudflare → балансировщик Render →
+// внутренний прокси → наш сервер. Каждое звено дописывает адрес в заголовок
+// X-Forwarded-For. Посетитель тоже может дописать туда что угодно — но ЛЕВЕЕ
+// своего настоящего адреса. Поэтому читаем заголовок справа налево и
+// пропускаем только «свои» звенья: внутреннюю сеть и официальные адреса
+// Cloudflare. Первый «чужой» адрес — это и есть посетитель.
+//
+// Это надёжнее, чем «доверять N последним звеньям»: если Render поменяет
+// цепочку прокси, подделать IP всё равно не получится.
+// Включается переменной TRUST_PROXY (любое число больше 0, на Render стоит 3).
+// Проверка: /api/admin/whoami должен показать ваш настоящий IP.
+const TRUSTED_PROXY_NETS = new net.BlockList();
+[
+  ['10.0.0.0', 8], ['172.16.0.0', 12], ['192.168.0.0', 16], ['127.0.0.0', 8],
+  ['100.64.0.0', 10], ['169.254.0.0', 16],
+  // Cloudflare: https://www.cloudflare.com/ips/
+  ['173.245.48.0', 20], ['103.21.244.0', 22], ['103.22.200.0', 22], ['103.31.4.0', 22],
+  ['141.101.64.0', 18], ['108.162.192.0', 18], ['190.93.240.0', 20], ['188.114.96.0', 20],
+  ['197.234.240.0', 22], ['198.41.128.0', 17], ['162.158.0.0', 15], ['104.16.0.0', 13],
+  ['104.24.0.0', 14], ['172.64.0.0', 13], ['131.0.72.0', 22]
+].forEach(([addr, prefix]) => TRUSTED_PROXY_NETS.addSubnet(addr, prefix, 'ipv4'));
+[
+  ['::1', 128], ['fc00::', 7], ['fe80::', 10],
+  ['2400:cb00::', 32], ['2606:4700::', 32], ['2803:f800::', 32], ['2405:b500::', 32],
+  ['2405:8100::', 32], ['2a06:98c0::', 29], ['2c0f:f248::', 32]
+].forEach(([addr, prefix]) => TRUSTED_PROXY_NETS.addSubnet(addr, prefix, 'ipv6'));
+
+function unmapIpv4(addr) {
+  const m = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(String(addr || ''));
+  return m ? m[1] : String(addr || '');
+}
+
+function isTrustedProxy(addr) {
+  const a = unmapIpv4(addr);
+  const family = net.isIP(a);
+  if (!family) return false;
+  return TRUSTED_PROXY_NETS.check(a, family === 6 ? 'ipv6' : 'ipv4');
+}
+
+const TRUST_PROXY_ENABLED = Number.parseInt(process.env.TRUST_PROXY || '0', 10) > 0;
+if (TRUST_PROXY_ENABLED) {
+  app.set('trust proxy', (addr) => isTrustedProxy(addr));
 }
 
 function clientIp(req) {
-  return req.ip || (req.socket && req.socket.remoteAddress) || 'unknown';
+  return unmapIpv4(req.ip || (req.socket && req.socket.remoteAddress) || 'unknown');
+}
+
+// Полный адрес IPv6 → 8 групп (для ключа лимитов).
+function expandIpv6(addr) {
+  const clean = addr.split('%')[0];
+  const [head, tail] = clean.split('::');
+  const toGroups = (part) => (part ? part.split(':') : []).flatMap((g) => {
+    if (g.includes('.')) { // встроенный IPv4 занимает 2 группы
+      const o = g.split('.').map(Number);
+      return [((o[0] << 8) | o[1]).toString(16), ((o[2] << 8) | o[3]).toString(16)];
+    }
+    return [g];
+  });
+  const h = toGroups(head);
+  const t = toGroups(tail);
+  const zeros = clean.includes('::') ? new Array(Math.max(0, 8 - h.length - t.length)).fill('0') : [];
+  return [...h, ...zeros, ...t].map((g) => g.toLowerCase().replace(/^0+(?=.)/, ''));
+}
+
+// Ключ для лимитов и блокировки входа. Обычному абоненту с IPv6 провайдер
+// выдаёт целую подсеть /64 (это миллиарды адресов) — если считать попытки по
+// отдельным адресам, злоумышленник просто менял бы адрес на каждой попытке.
+// Поэтому для IPv6 считаем по подсети /64, для IPv4 — по адресу.
+function rateKey(req) {
+  const ip = clientIp(req);
+  if (net.isIPv6(ip)) return `${expandIpv6(ip).slice(0, 4).join(':')}::/64`;
+  return ip;
 }
 
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
@@ -347,6 +413,9 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  // Файлы сайта (в т.ч. видео) нельзя встраивать на чужие сайты — чужие
+  // страницы не будут тратить наш трафик.
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   // Браузер будет открывать сайт только по HTTPS (на localhost по http игнорируется).
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   // Ответы API и админки (имена и телефоны клиентов) не кешируем —
@@ -404,19 +473,32 @@ function isValidName(value) {
   if (trimmed.length < 2 || trimmed.length > 120) return false;
   // eslint-disable-next-line no-control-regex
   if (/[\x00-\x1f\x7f]/.test(trimmed)) return false;
+  // Невидимые символы и символы смены направления текста — ими можно
+  // подделать то, как имя выглядит в админке и в Telegram.
+  if (/[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufeff\uffa0]/.test(trimmed)) return false;
+  // Ссылки в имени — типичный спам/фишинг через уведомления в Telegram.
+  if (/(https?:|www\.|t\.me\/|@\w{3,}|\.(com|ru|net|org|io|me|ge|xyz|top|info|link|site|online|shop|click)\b)/i.test(trimmed)) return false;
+  // В имени должна быть хотя бы одна буква.
+  if (!/\p{L}/u.test(trimmed)) return false;
   return true;
 }
 
-// Телефон: разрешаем цифры, пробелы, +, -, (), не меньше 6 и не больше 20
-// значащих цифр — достаточно гибко для международных номеров и при этом
-// отсекает явный мусор/скрипты в этом поле.
+// Телефон в международном формате: необязательный «+» в начале, дальше
+// цифры, пробелы, «-» и скобки; 7–15 цифр (максимум по стандарту E.164).
 function isValidPhone(value) {
   if (typeof value !== 'string') return false;
   const trimmed = value.trim();
   if (trimmed.length > 40) return false;
-  if (!/^[0-9+()\-\s]+$/.test(trimmed)) return false;
+  if (!/^\+?[0-9()\-\s]+$/.test(trimmed)) return false;
   const digitsOnly = trimmed.replace(/\D/g, '');
-  return digitsOnly.length >= 6 && digitsOnly.length <= 20;
+  return digitsOnly.length >= 7 && digitsOnly.length <= 15;
+}
+
+// Приводим номер к виду «+995 599 12 34 56»: один «+» в начале, лишние
+// пробелы схлопнуты.
+function normalizePhoneForDisplay(value) {
+  const body = String(value).trim().replace(/^\+/, '').replace(/\s+/g, ' ').trim();
+  return ('+' + body).slice(0, 40);
 }
 
 // Токен отмены: 32 случайных байта в base64url — 43 символа [A-Za-z0-9_-].
@@ -446,7 +528,7 @@ function createRateLimiter({ windowMs, max, message }) {
   }, Math.min(windowMs, 5 * 60 * 1000)).unref();
 
   return (req, res, next) => {
-    const ip = clientIp(req);
+    const ip = rateKey(req);
     const now = Date.now();
     const cutoff = now - windowMs;
     const timestamps = (hits.get(ip) || []).filter((t) => t > cutoff);
@@ -573,7 +655,7 @@ function basicAuth(req, res, next) {
       .send('Админ-панель не настроена: задайте ADMIN_PASSWORD в файле .env и перезапустите сервер.');
   }
 
-  const ip = clientIp(req);
+  const ip = rateKey(req);
   const state = getLoginState(ip);
 
   if (state.lockedUntil && state.lockedUntil > Date.now()) {
@@ -607,7 +689,9 @@ function basicAuth(req, res, next) {
     }
   }
 
-  registerFailedLogin(ip);
+  // Первый заход без пароля (браузер ещё не показал окно входа) — это не
+  // неудачная попытка, просто просим представиться.
+  if (header) registerFailedLogin(ip);
   res.set('WWW-Authenticate', 'Basic realm="Admin panel"');
   return res.status(401).send('Требуется авторизация');
 }
@@ -765,7 +849,7 @@ app.post('/api/book', bookLimiter, asyncHandler(async (req, res) => {
     const newBooking = {
       id: crypto.randomUUID(),
       name: String(name).trim().slice(0, 120),
-      phone: String(phone).trim().slice(0, 40),
+      phone: normalizePhoneForDisplay(phone),
       date,
       time,
       serviceId: service.id,
@@ -1174,7 +1258,7 @@ app.delete('/api/admin/blocks/:id', basicAuth, asyncHandler(async (req, res) => 
 app.get('/api/admin/whoami', basicAuth, (req, res) => {
   res.json({
     ipSeenByServer: clientIp(req),
-    trustProxyHops: TRUST_PROXY_HOPS || 0,
+    trustProxy: TRUST_PROXY_ENABLED ? 'trusted networks (private + Cloudflare)' : 'off',
     xForwardedFor: req.headers['x-forwarded-for'] || null
   });
 });
