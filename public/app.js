@@ -112,6 +112,35 @@
     document.querySelectorAll('.js-wa-link').forEach(function (a) { a.href = href; });
   }
 
+  // ---------- видео в верхнем блоке ----------
+  // Запускаем только если человек не просил экономить трафик и не включал
+  // «уменьшить движение»; тогда виден постер (кадр из видео), и видео
+  // даже не скачивается. Когда блок ушёл с экрана — ставим на паузу.
+  (function () {
+    var video = $('heroVideo');
+    if (!video) return;
+    var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var saveData = navigator.connection && navigator.connection.saveData;
+    if (reduceMotion || saveData) return;
+
+    video.muted = true; // без звука браузеры разрешают автозапуск (в т.ч. iPhone)
+    function play() {
+      var p = video.play();
+      if (p && typeof p.catch === 'function') p.catch(function () { /* браузер запретил — останется постер */ });
+    }
+
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) play();
+          else video.pause();
+        });
+      }, { threshold: 0.1 }).observe(video);
+    } else {
+      play();
+    }
+  })();
+
   // ---------- копирование адреса ----------
   (function () {
     var btn = $('copyAddressBtn');

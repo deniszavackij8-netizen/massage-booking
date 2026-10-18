@@ -331,7 +331,8 @@ const CONTENT_SECURITY_POLICY = [
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
-  "img-src 'self' data: https://images.unsplash.com",
+  "img-src 'self' data:",
+  "media-src 'self'",
   "connect-src 'self'",
   "object-src 'none'",
   "base-uri 'none'",
@@ -364,6 +365,11 @@ app.use((err, req, res, next) => {
   }
   return next(err);
 });
+
+// Видео и постер кешируются в браузере на сутки — повторный заход на сайт
+// не скачивает ролик заново. (Express сам умеет отдавать видео «кусками»
+// по запросу Range — это нужно iPhone, без этого Safari видео не покажет.)
+app.use('/media', express.static(path.join(__dirname, 'public', 'media'), { maxAge: '1d' }));
 
 app.use(express.static(path.join(__dirname, 'public')));
 

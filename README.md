@@ -58,7 +58,7 @@ https://ВАШ-САЙТ/api/cron/daily-summary?key=CRON_SECRET
 - **Часы работы** — массив `SLOTS` и `OPEN_TIME`/`CLOSE_TIME` в `server.js` (и строка «10:00 – 20:00» в `public/index.html`).
 - **Услуги и цены** — массив `SERVICES` в `server.js` (название по-русски для Telegram и названия на 3 языках для сайта).
 - **Тексты и переводы** — `public/i18n.js`.
-- **Фото** — строка `<img src="https://images.unsplash.com/...">` в `public/index.html`.
+- **Видео в верхнем блоке** — файлы `public/media/hero.mp4`, `hero.webm` и постер `hero-poster.jpg` (ролик с Pexels, бесплатная лицензия для сайтов). Чтобы заменить — положите свои файлы с теми же именами (MP4 — H.264, без звука, лучше до 3 МБ).
 
 ## Безопасность
 
