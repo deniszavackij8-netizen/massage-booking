@@ -91,6 +91,18 @@
   .hero-ctas{display:flex; gap:14px; margin-top:28px; flex-wrap:wrap;}
   .hero-art{position:relative; aspect-ratio:4/5; border-radius:26px; overflow:hidden; box-shadow:0 30px 60px -24px rgba(44,40,34,.35); background:var(--sand-200);}
   /* object-position сдвигает кадр так, чтобы в узком блоке были видны руки мастера */
+  .hero-video-toggle{
+    position:absolute; right:14px; bottom:14px; z-index:2; width:42px; height:42px; border-radius:50%;
+    border:1px solid rgba(255,255,255,.35); background:rgba(28,24,20,.55); color:#fff; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; padding:0;
+    backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); transition:background .15s, transform .15s;
+  }
+  .hero-video-toggle:hover{background:rgba(28,24,20,.75); transform:scale(1.05);}
+  .hero-video-toggle:focus-visible{outline:2px solid #fff; outline-offset:3px;}
+  .hero-video-toggle svg{width:18px; height:18px;}
+  .hero-video-toggle .icon-play{display:none; margin-left:2px;}
+  .hero-video-toggle.is-paused .icon-play{display:block;}
+  .hero-video-toggle.is-paused .icon-pause{display:none;}
   .hero-art .hero-video{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:58% 50%; display:block; pointer-events:none; background:#2a2420;}
 
   .section-head{max-width:620px; margin-bottom:36px;}
@@ -293,6 +305,10 @@
         <source src="/media/hero.webm" type="video/webm; codecs=&quot;vp9&quot;">
         <source src="/media/hero.mp4" type="video/mp4">
       </video>
+      <button type="button" class="hero-video-toggle" id="heroVideoToggle" hidden aria-pressed="false">
+        <svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6.5" y="5" width="3.6" height="14" rx="1"/><rect x="13.9" y="5" width="3.6" height="14" rx="1"/></svg>
+        <svg class="icon-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.2v13.6a.8.8 0 0 0 1.2.7l10.6-6.8a.8.8 0 0 0 0-1.4L9.2 4.5A.8.8 0 0 0 8 5.2z"/></svg>
+      </button>
     </div>
   </div>
 </section>

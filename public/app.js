@@ -113,32 +113,67 @@
   }
 
   // ---------- видео в верхнем блоке ----------
-  // Запускаем только если человек не просил экономить трафик и не включал
-  // «уменьшить движение»; тогда виден постер (кадр из видео), и видео
-  // даже не скачивается. Когда блок ушёл с экрана — ставим на паузу.
-  (function () {
+  // Видео запускается само (без звука) у всех, кроме тех, кто включил
+  // экономию трафика, — им показываем постер и кнопку «включить», видео
+  // не скачивается, пока не нажмут. Кнопка пауза/воспроизвести есть всегда
+  // (кто не любит движение на экране — может остановить). Если браузер
+  // запретил автозапуск, кнопка показывает «включить» — видео запустится
+  // по нажатию. Когда блок ушёл с экрана — видео на паузе (бережём батарею).
+  var heroVideo = (function () {
     var video = $('heroVideo');
-    if (!video) return;
-    var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    var saveData = navigator.connection && navigator.connection.saveData;
-    if (reduceMotion || saveData) return;
+    var btn = $('heroVideoToggle');
+    if (!video || !btn) return { refreshLabel: function () {} };
+
+    var saveData = !!(navigator.connection && navigator.connection.saveData);
+    var userPaused = saveData; // при экономии трафика ждём нажатия
+    var onScreen = true;
 
     video.muted = true; // без звука браузеры разрешают автозапуск (в т.ч. iPhone)
+
+    function refreshLabel() {
+      var paused = video.paused;
+      btn.classList.toggle('is-paused', paused);
+      btn.setAttribute('aria-pressed', paused ? 'true' : 'false');
+      var label = t(paused ? 'video_play' : 'video_pause');
+      btn.setAttribute('aria-label', label);
+      btn.title = label;
+    }
+
     function play() {
       var p = video.play();
-      if (p && typeof p.catch === 'function') p.catch(function () { /* браузер запретил — останется постер */ });
+      if (p && typeof p.catch === 'function') {
+        p.catch(function () { refreshLabel(); }); // автозапуск запрещён — покажем «включить»
+      }
     }
+
+    video.addEventListener('play', refreshLabel);
+    video.addEventListener('pause', refreshLabel);
+
+    btn.addEventListener('click', function () {
+      if (video.paused) {
+        userPaused = false;
+        play();
+      } else {
+        userPaused = true;
+        video.pause();
+      }
+    });
 
     if ('IntersectionObserver' in window) {
       new IntersectionObserver(function (entries) {
         entries.forEach(function (entry) {
-          if (entry.isIntersecting) play();
-          else video.pause();
+          onScreen = entry.isIntersecting;
+          if (onScreen && !userPaused) play();
+          else if (!onScreen) video.pause();
         });
       }, { threshold: 0.1 }).observe(video);
-    } else {
+    } else if (!userPaused) {
       play();
     }
+
+    btn.hidden = false;
+    refreshLabel();
+    return { refreshLabel: refreshLabel };
   })();
 
   // ---------- копирование адреса ----------
@@ -630,6 +665,7 @@
 
   I18N.onChange(function () {
     updateMeta();
+    heroVideo.refreshLabel();
     updateWhatsAppLinks();
     renderServiceSelect();
     renderServiceCards();

@@ -27,6 +27,8 @@
       hero_cta_time: 'Выбрать время',
       hero_cta_wa: 'Написать в WhatsApp',
       hero_img_alt: 'Массаж спины в спа-кабинете',
+      video_pause: 'Остановить видео',
+      video_play: 'Включить видео',
 
       services_eyebrow: 'Услуги и цены',
       services_title: 'Наши массажи',
@@ -142,6 +144,8 @@
       hero_cta_time: 'Choose a time',
       hero_cta_wa: 'Message us on WhatsApp',
       hero_img_alt: 'Back massage in a spa room',
+      video_pause: 'Pause video',
+      video_play: 'Play video',
 
       services_eyebrow: 'Services & prices',
       services_title: 'Our massages',
@@ -257,6 +261,8 @@
       hero_cta_time: 'დროის არჩევა',
       hero_cta_wa: 'მოგვწერეთ WhatsApp-ში',
       hero_img_alt: 'ზურგის მასაჟი სპა-ოთახში',
+      video_pause: 'ვიდეოს შეჩერება',
+      video_play: 'ვიდეოს ჩართვა',
 
       services_eyebrow: 'სერვისები და ფასები',
       services_title: 'ჩვენი მასაჟები',
