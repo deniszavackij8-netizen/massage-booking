@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Salt & Stone — массаж и спа в Батуми</title>
+<meta name="description" content="Онлайн-запись на массаж в Батуми: выберите свободное время и получите подтверждение.">
+<link rel="alternate" hreflang="ru" href="/?lang=ru">
+<link rel="alternate" hreflang="en" href="/?lang=en">
+<link rel="alternate" hreflang="ka" href="/?lang=ka">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --sand-50:  #faf6f0;
+    --sand-100: #f3ebe0;
+    --sand-200: #e7dac8;
+    --stone-700:#4a443c;
+    --stone-900:#2c2822;
+    --sea-500:  #6f9c8d;
+    --sea-700:  #4f7568;
+    --accent:   #c08a5c;
+    --good:     #4f8a5c;
+    --bad:      #b4473f;
+    --wa:       #1fa855;
+
+    --bg: var(--sand-50);
+    --bg-raised: #ffffff;
+    --fg: var(--stone-900);
+    --fg-muted: var(--stone-700);
+    --line: var(--sand-200);
+    --brand: var(--sea-700);
+    --brand-soft: var(--sea-500);
+
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-body: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans Georgian', sans-serif;
+    color-scheme: light;
+  }
+
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{margin:0; font-family:var(--font-body); background:var(--bg); color:var(--fg); -webkit-font-smoothing:antialiased;}
+  img{max-width:100%; display:block;}
+  a{color:inherit;}
+  h1,h2,h3{font-family:var(--font-display); margin:0; text-wrap:balance; font-weight:500;}
+  html[lang="ka"] h1, html[lang="ka"] h2, html[lang="ka"] h3{font-family:var(--font-body); font-weight:700;}
+  p{margin:0; line-height:1.6;}
+  [hidden]{display:none !important;}
+  .wrap{max-width:1100px; margin:0 auto; padding-left:max(20px, env(safe-area-inset-left,0px)); padding-right:max(20px, env(safe-area-inset-right,0px));}
+  .eyebrow{font-size:.78rem; letter-spacing:.14em; text-transform:uppercase; color:var(--brand); font-weight:700;}
+  section{padding-block: clamp(48px, 8vw, 90px);}
+  section[id]{scroll-margin-top:80px;}
+
+  header{position:sticky; top:0; z-index:50; background:rgba(250,246,240,.92); backdrop-filter:blur(10px); border-bottom:1px solid var(--line);}
+  .nav{display:flex; align-items:center; justify-content:space-between; gap:12px; height:72px;}
+  .logo{font-family:var(--font-display); font-size:1.25rem; font-weight:600; display:flex; align-items:center; gap:10px; text-decoration:none; white-space:nowrap;}
+  .logo-mark{width:32px; height:32px; border-radius:50%; background:radial-gradient(circle at 32% 30%, var(--sea-500), var(--sea-700)); flex:none;}
+  nav.links{display:flex; gap:24px; align-items:center;}
+  nav.links a{text-decoration:none; font-size:.92rem; font-weight:600; color:var(--fg-muted); white-space:nowrap;}
+  nav.links a:hover{color:var(--brand);}
+  .nav-right{display:flex; align-items:center; gap:12px;}
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:12px 22px; border-radius:999px; font-weight:700; font-size:.92rem; text-decoration:none; border:1px solid transparent; cursor:pointer; transition:transform .15s ease, box-shadow .15s ease; font-family:inherit; line-height:1.2; text-align:center;}
+  .btn-primary{background:var(--brand); color:#fff; box-shadow:0 8px 20px -8px rgba(79,117,104,.55);}
+  .btn-primary:hover{transform:translateY(-1px);}
+  .btn-primary:disabled{opacity:.55; cursor:not-allowed; transform:none;}
+  .btn-ghost{background:#fff; color:var(--fg); border-color:var(--line);}
+  .btn-ghost:hover{border-color:var(--brand-soft); color:var(--brand);}
+  .btn-sm{padding:9px 16px; font-size:.85rem;}
+  .btn svg{width:18px; height:18px; flex:none;}
+  .btn:focus-visible, nav.links a:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  .burger{display:none; background:none; border:none; padding:8px; cursor:pointer;}
+  .burger span{display:block; width:24px; height:2px; background:var(--fg); margin:5px 0; border-radius:2px;}
+
+  .lang-switch{display:inline-flex; border:1px solid var(--line); border-radius:999px; padding:3px; background:#fff; flex:none;}
+  .lang-switch button{border:none; background:transparent; font:inherit; font-size:.76rem; font-weight:800; letter-spacing:.04em; padding:6px 10px; min-width:36px; border-radius:999px; cursor:pointer; color:var(--fg-muted);}
+  .lang-switch button:hover{color:var(--brand);}
+  .lang-switch button.lang-active{background:var(--brand); color:#fff;}
+  .lang-switch button:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+
+  .hero{position:relative; padding-top:clamp(56px,9vw,96px); padding-bottom:clamp(40px,7vw,72px); overflow:hidden;}
+  .hero::before{content:""; position:absolute; inset:0; background:radial-gradient(900px 500px at 85% -10%, rgba(111,156,141,.18), transparent 60%); z-index:0;}
+  .hero-grid{position:relative; z-index:1; display:grid; grid-template-columns:1.05fr .95fr; gap:48px; align-items:center;}
+  .hero h1{font-size:clamp(2.1rem, 4vw, 3.1rem); line-height:1.1;}
+  .hero h1 em{font-style:italic; color:var(--brand); display:block;}
+  html[lang="ka"] .hero h1{font-size:clamp(1.8rem, 3.4vw, 2.6rem);}
+  html[lang="ka"] .hero h1 em{font-style:normal;}
+  .hero p.lead{margin-top:18px; max-width:46ch; font-size:1.05rem; color:var(--fg-muted);}
+  .hero-ctas{display:flex; gap:14px; margin-top:28px; flex-wrap:wrap;}
+  .hero-art{position:relative; aspect-ratio:4/5; border-radius:26px; overflow:hidden; box-shadow:0 30px 60px -24px rgba(44,40,34,.35); background:var(--sand-200);}
+  .hero-art img{width:100%; height:100%; object-fit:cover;}
+
+  .section-head{max-width:620px; margin-bottom:36px;}
+  .section-head h2{font-size:clamp(1.7rem, 2.8vw, 2.2rem); margin-top:8px;}
+  .section-head p{margin-top:12px; color:var(--fg-muted);}
+
+  /* ---------- услуги и цены ---------- */
+  #services{padding-top:clamp(24px,4vw,40px);}
+  .services-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:16px;}
+  .service-card{background:var(--bg-raised); border:1px solid var(--line); border-radius:20px; padding:22px; display:flex; flex-direction:column; gap:16px;}
+  .service-card h3{font-size:1.15rem; line-height:1.3;}
+  .service-prices{list-style:none; margin:0; padding:0; display:grid; gap:8px; flex:1; align-content:start;}
+  .service-prices li{display:flex; justify-content:space-between; align-items:baseline; gap:12px; font-size:.92rem; color:var(--fg-muted); border-bottom:1px dashed var(--line); padding-bottom:8px;}
+  .service-prices b{color:var(--fg); font-size:1.05rem;}
+  .service-card .btn{align-self:stretch;}
+  .services-msg{color:var(--fg-muted); grid-column:1/-1;}
+
+  /* ---------- запись ---------- */
+  .booking-box{
+    background:var(--bg-raised); border:1px solid var(--line); border-radius:26px;
+    padding:clamp(24px,4vw,40px); display:grid; grid-template-columns:1fr 1fr; gap:36px;
+  }
+  .field{display:flex; flex-direction:column; gap:6px; margin-bottom:16px;}
+  .field label{font-size:.85rem; font-weight:700; color:var(--fg-muted);}
+  .field input, .field select{
+    border:1px solid var(--line); border-radius:12px; padding:12px 14px; font:inherit;
+    background:#fff; color:var(--fg); min-height:46px; width:100%;
+  }
+  .field input:focus, .field select:focus{outline:2px solid var(--brand-soft); outline-offset:1px;}
+  .duration-options{display:flex; gap:10px; flex-wrap:wrap;}
+  .duration-opt{
+    border:1px solid var(--line); background:#fff; border-radius:12px; padding:10px 14px;
+    font:inherit; font-weight:700; font-size:.88rem; cursor:pointer; color:var(--fg);
+  }
+  .duration-opt:hover{border-color:var(--brand-soft); color:var(--brand);}
+  .duration-opt.duration-selected{background:var(--brand); border-color:var(--brand); color:#fff;}
+
+  .booking-summary{
+    background:var(--sand-100); border:1px dashed var(--brand-soft); border-radius:16px;
+    padding:16px 18px; margin:18px 0; display:grid; gap:6px; font-size:.92rem;
+  }
+  .booking-summary .summary-title{font-weight:800; color:var(--brand); font-size:.82rem; text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px;}
+  .booking-summary .summary-row{display:flex; justify-content:space-between; gap:12px;}
+  .booking-summary .summary-row span:first-child{color:var(--fg-muted);}
+  .booking-summary .summary-row b{text-align:right;}
+
+  .btn-confirm{
+    width:100%; margin-top:6px; padding:16px 22px; font-size:1.02rem;
+    background:linear-gradient(135deg, var(--accent), #d9a06b);
+    box-shadow:0 10px 28px -8px rgba(192,138,92,.6);
+    border:none; color:#fff;
+  }
+  .btn-confirm:hover:not(:disabled){transform:translateY(-1px); box-shadow:0 14px 32px -8px rgba(192,138,92,.7);}
+  .btn-confirm:disabled{background:var(--sand-200); color:#8a7f70; box-shadow:none; cursor:not-allowed;}
+  .slots-label{font-size:.85rem; font-weight:700; color:var(--fg-muted); margin-bottom:10px; display:block;}
+  .slots-grid{display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; min-height:52px;}
+  .slot-btn{
+    border:1px solid var(--line); background:#fff; border-radius:12px; padding:10px 6px; min-height:44px;
+    font:inherit; font-weight:700; font-size:.88rem; cursor:pointer; color:var(--fg);
+    transition:background .15s, border-color .15s, color .15s;
+  }
+  .slot-btn:hover:not(:disabled){border-color:var(--brand-soft); color:var(--brand);}
+  .slot-btn.slot-selected{background:var(--brand); border-color:var(--brand); color:#fff;}
+  .slot-btn:disabled{background:var(--sand-100); color:#9c9183; border-color:var(--sand-100); cursor:not-allowed; text-decoration:line-through;}
+  .slots-loading, .slots-error, .slots-none{grid-column:1/-1; font-size:.88rem; color:var(--fg-muted); margin:0;}
+  .booking-status{margin-top:14px; font-size:.9rem; font-weight:700; min-height:1.4em;}
+  .booking-status.success{color:var(--good);}
+  .booking-status.error{color:var(--bad);}
+
+  /* экран «Вы записаны» */
+  .booking-success{display:flex; flex-direction:column; gap:14px;}
+  .success-badge{width:52px; height:52px; border-radius:50%; background:var(--good); color:#fff; display:flex; align-items:center; justify-content:center;}
+  .success-badge svg{width:28px; height:28px;}
+  .booking-success h3{font-size:1.6rem;}
+  .success-text{font-size:1rem; color:var(--fg-muted);}
+  .success-actions{display:flex; flex-wrap:wrap; gap:10px;}
+  .success-hint{font-size:.85rem; color:var(--fg-muted);}
+  .success-cancel{color:var(--bad); font-weight:700; font-size:.92rem;}
+  .success-cancel:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+
+  /* «Ваши записи на этом устройстве» */
+  .my-bookings{background:var(--bg-raised); border:1px solid var(--line); border-left:4px solid var(--brand); border-radius:18px; padding:16px 20px; margin-bottom:22px;}
+  .my-bookings h3{font-size:1.05rem; margin-bottom:6px;}
+  .my-booking{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 16px; padding:10px 0; border-top:1px dashed var(--line); font-size:.92rem;}
+  .my-booking:first-of-type{border-top:none;}
+  .my-booking-actions{display:flex; gap:16px;}
+  .my-booking-actions a{color:var(--brand); font-weight:700; text-decoration:none;}
+  .my-booking-actions a.danger{color:var(--bad);}
+  .my-booking-actions a:hover{text-decoration:underline;}
+
+  .booking-side{
+    background:var(--stone-900); color:var(--sand-50); border-radius:20px; padding:26px;
+  }
+  .booking-side h3{color:#fff; font-size:1.05rem;}
+  .booking-side ul{list-style:none; margin:16px 0 0; padding:0; display:grid; gap:10px; font-size:.9rem; color:#d8d2c7;}
+  .booking-side li{display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 12px; border-bottom:1px dashed rgba(255,255,255,.18); padding-bottom:8px;}
+  .booking-side li b{text-align:right; white-space:nowrap; margin-left:auto;}
+  .booking-side li a{color:inherit; text-decoration:none;}
+  .booking-side li a:hover{text-decoration:underline;}
+
+  .address-card{
+    margin:16px 0 26px; padding:14px 16px; border-radius:14px;
+    background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12);
+  }
+  .address-text{font-size:.95rem; font-weight:600; color:#fff; line-height:1.45; overflow-wrap:anywhere;}
+  .address-actions{display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;}
+  .address-btn{
+    display:inline-flex; align-items:center; gap:6px; min-height:40px; padding:8px 14px;
+    border-radius:999px; font:inherit; font-size:.85rem; font-weight:700; cursor:pointer;
+    text-decoration:none; transition:background .15s, color .15s, border-color .15s;
+  }
+  .address-btn svg{width:16px; height:16px; flex:none;}
+  .address-copy{background:var(--sand-50); color:var(--stone-900); border:1px solid var(--sand-50);}
+  .address-copy:hover{background:#fff;}
+  .address-copy.copied{background:var(--good); border-color:var(--good); color:#fff;}
+  .address-map{background:transparent; color:var(--sand-50); border:1px solid rgba(255,255,255,.3);}
+  .address-map:hover{border-color:#fff; color:#fff;}
+  .address-btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+
+  /* плавающая кнопка WhatsApp */
+  .wa-float{
+    position:fixed; z-index:60;
+    right:max(18px, env(safe-area-inset-right,0px)); bottom:max(18px, env(safe-area-inset-bottom,0px));
+    width:58px; height:58px; border-radius:50%; background:var(--wa); color:#fff;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 12px 26px -8px rgba(0,0,0,.4); transition:transform .15s ease;
+  }
+  .wa-float:hover{transform:scale(1.06);}
+  .wa-float:focus-visible{outline:3px solid var(--accent); outline-offset:3px;}
+  .wa-float svg{width:28px; height:28px;}
+
+  footer{padding:28px 0 100px; border-top:1px solid var(--line); text-align:center; font-size:.82rem; color:var(--fg-muted);}
+
+  @media (max-width:960px){
+    nav.links{position:fixed; inset:72px 0 auto 0; background:var(--bg); flex-direction:column; align-items:stretch; gap:0; padding:8px 20px 20px; border-bottom:1px solid var(--line); transform:translateY(-12px); opacity:0; pointer-events:none; transition:all .2s ease;}
+    nav.links.open{transform:translateY(0); opacity:1; pointer-events:auto;}
+    nav.links a{width:100%; padding:13px 0; border-bottom:1px solid var(--line);}
+    .burger{display:block;}
+    .nav-cta{display:none;}
+    .hero-grid{grid-template-columns:1fr; gap:30px;}
+    .hero-art{order:-1; aspect-ratio:16/10;}
+    .booking-box{grid-template-columns:1fr;}
+    .slots-grid{grid-template-columns:repeat(3,1fr);}
+  }
+  @media (max-width:480px){
+    .logo{font-size:1.08rem; gap:8px;}
+    .logo-mark{width:26px; height:26px;}
+    .nav-right{gap:6px;}
+    .lang-switch button{padding:6px 8px; min-width:32px;}
+    .slots-grid{grid-template-columns:repeat(2,1fr);}
+    .hero-ctas .btn{flex:1 1 100%;}
+  }
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto;}
+    *{transition:none !important;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a href="/" class="logo"><span class="logo-mark" aria-hidden="true"></span>Salt & Stone</a>
+    <nav class="links" id="navLinks">
+      <a href="#services" data-i18n="nav_services">Услуги и цены</a>
+      <a href="#booking" data-i18n="nav_book">Запись онлайн</a>
+      <a href="https://wa.me/995593370862" class="js-wa-link" target="_blank" rel="noopener">WhatsApp</a>
+      <a href="https://t.me/IIgor0000007" target="_blank" rel="noopener">Telegram</a>
+      <a href="https://instagram.com/massage.batumi_" target="_blank" rel="noopener">Instagram</a>
+    </nav>
+    <div class="nav-right">
+      <div class="lang-switch" role="group" data-i18n-attr="aria-label:language" aria-label="Язык">
+        <button type="button" data-lang="ru" lang="ru" aria-pressed="false">RU</button>
+        <button type="button" data-lang="en" lang="en" aria-pressed="false">EN</button>
+        <button type="button" data-lang="ka" lang="ka" aria-pressed="false">KA</button>
+      </div>
+      <a href="#booking" class="btn btn-primary btn-sm nav-cta" data-i18n="cta_book">Записаться</a>
+      <button class="burger" id="burgerBtn" type="button" aria-controls="navLinks" aria-expanded="false" data-i18n-attr="aria-label:menu" aria-label="Меню"><span></span><span></span><span></span></button>
+    </div>
+  </div>
+</header>
+
+<main>
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <p class="eyebrow" data-i18n="hero_eyebrow">Массаж и спа · Батуми</p>
+      <h1><span data-i18n="hero_title_1">Запишитесь на массаж</span> <em data-i18n="hero_title_2">онлайн за минуту</em></h1>
+      <p class="lead" data-i18n="hero_lead">Выберите дату, свободное время и оставьте телефон — мы получим уведомление и подтвердим запись.</p>
+      <div class="hero-ctas">
+        <a href="#booking" class="btn btn-primary" data-i18n="hero_cta_time">Выбрать время</a>
+        <a href="https://wa.me/995593370862" class="btn btn-ghost js-wa-link" target="_blank" rel="noopener" data-i18n="hero_cta_wa">Написать в WhatsApp</a>
+      </div>
+    </div>
+    <div class="hero-art">
+      <img src="https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=1200&q=80" alt="Массаж спины в спа-кабинете" data-i18n-attr="alt:hero_img_alt" width="1200" height="1500">
+    </div>
+  </div>
+</section>
+
+<section id="services">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow" data-i18n="services_eyebrow">Услуги и цены</p>
+      <h2 data-i18n="services_title">Наши массажи</h2>
+      <p data-i18n="services_lead">Выберите массаж — и сразу запишитесь на удобное время.</p>
+    </div>
+    <div class="services-grid" id="servicesGrid" aria-live="polite">
+      <p class="services-msg" data-i18n="services_loading">Загружаем услуги…</p>
+    </div>
+  </div>
+</section>
+
+<section id="booking">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow" data-i18n="booking_eyebrow">Онлайн-запись</p>
+      <h2 data-i18n="booking_title">Выберите удобное время</h2>
+      <p data-i18n="booking_lead">Занятые слоты показаны серым и недоступны для выбора — двойная запись на одно время исключена.</p>
+    </div>
+
+    <div class="my-bookings" id="myBookings" hidden>
+      <h3 data-i18n="my_title">Ваши записи на этом устройстве</h3>
+      <div id="myBookingsList"></div>
+    </div>
+
+    <div class="booking-box">
+      <div>
+        <form id="bookingForm" novalidate>
+          <div class="field">
+            <label for="bookName" data-i18n="label_name">Имя и фамилия</label>
+            <input id="bookName" name="name" type="text" placeholder="Нино Беридзе" data-i18n-attr="placeholder:ph_name" required maxlength="120" autocomplete="name">
+          </div>
+          <div class="field">
+            <label for="bookPhone" data-i18n="label_phone">Номер телефона</label>
+            <input id="bookPhone" name="phone" type="tel" placeholder="+995 5xx xx xx xx" required maxlength="40" autocomplete="tel" inputmode="tel">
+          </div>
+          <!-- Ловушка для ботов: поле спрятано от людей, бот его заполнит и выдаст себя -->
+          <div aria-hidden="true" style="position:absolute; left:-10000px; width:1px; height:1px; overflow:hidden;">
+            <label for="bookWebsite">Website</label>
+            <input id="bookWebsite" name="website" type="text" tabindex="-1" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="bookService" data-i18n="label_service">Услуга</label>
+            <select id="bookService" name="service" required>
+              <option value="" disabled selected data-i18n="choose_service">Выберите услугу</option>
+            </select>
+          </div>
+          <div class="field" id="durationField" hidden>
+            <span class="slots-label" data-i18n="label_duration">Длительность</span>
+            <div class="duration-options" id="durationOptions"></div>
+          </div>
+          <div class="field">
+            <label for="bookDate" data-i18n="label_date">Дата сеанса</label>
+            <input id="bookDate" name="date" type="date" required>
+          </div>
+          <div class="field">
+            <span class="slots-label" data-i18n="label_slots">Доступное время</span>
+            <div class="slots-grid" id="slotsGrid" aria-live="polite">
+              <p class="slots-loading" data-i18n="slots_loading">Загрузка расписания…</p>
+            </div>
+          </div>
+          <div class="booking-summary" id="bookingSummary" hidden></div>
+          <button type="submit" class="btn btn-confirm" id="confirmBtn" disabled data-i18n="btn_choose">Выберите услугу, дату и время</button>
+          <p class="booking-status" id="bookingStatus" role="status"></p>
+        </form>
+
+        <div class="booking-success" id="bookingSuccess" hidden tabindex="-1">
+          <div class="success-badge" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+          </div>
+          <h3 data-i18n="success_title">Вы записаны!</h3>
+          <p class="success-text" id="successText"></p>
+          <div class="success-actions">
+            <a class="btn btn-primary" id="successIcs" href="#">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M12 14v4M10 16h4"/></svg>
+              <span data-i18n="success_calendar">Добавить в календарь</span>
+            </a>
+            <a class="btn btn-ghost" id="successGoogle" href="#" target="_blank" rel="noopener" data-i18n="success_google">Google Календарь</a>
+          </div>
+          <p class="success-hint" data-i18n="success_hint">Ссылка для отмены есть и в событии календаря. Отменить онлайн можно не позже чем за 3 часа до сеанса.</p>
+          <div class="success-actions">
+            <button type="button" class="btn btn-ghost" id="bookAgainBtn" data-i18n="success_again">Записаться ещё</button>
+            <a class="btn success-cancel" id="successCancel" href="#" data-i18n="success_cancel">Отменить запись</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="booking-side">
+        <h3 data-i18n="address_title">Адрес</h3>
+        <div class="address-card">
+          <div class="address-text" id="salonAddress">103 Gorgasali Street, Flamingo Salon</div>
+          <div class="address-actions">
+            <button type="button" class="address-btn address-copy" id="copyAddressBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+              <span id="copyAddressLabel" aria-live="polite" data-i18n="copy">Скопировать</span>
+            </button>
+            <a class="address-btn address-map" href="https://www.google.com/maps/search/?api=1&query=103%20Gorgasali%20Street%2C%20Batumi" target="_blank" rel="noopener">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+              <span data-i18n="on_map">На карте</span>
+            </a>
+          </div>
+        </div>
+        <h3 data-i18n="hours_title">Часы работы</h3>
+        <ul>
+          <li><span data-i18n="every_day">Ежедневно</span><b>10:00 – 20:00</b></li>
+        </ul>
+        <h3 style="margin-top:22px;" data-i18n="contact_title">Связаться напрямую</h3>
+        <ul>
+          <li><span>WhatsApp</span><b><a href="https://wa.me/995593370862" class="js-wa-link" target="_blank" rel="noopener">+995 593 37 08 62</a></b></li>
+          <li><span>Telegram</span><b><a href="https://t.me/IIgor0000007" target="_blank" rel="noopener">@IIgor0000007</a></b></li>
+          <li><span>Instagram</span><b><a href="https://instagram.com/massage.batumi_" target="_blank" rel="noopener">@massage.batumi_</a></b></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">© 2026 Salt & Stone Massage & Spa · 103 Gorgasali Street, Flamingo Salon, <span data-i18n="footer_city">Батуми</span>.</div>
+</footer>
+
+<a class="wa-float js-wa-link" href="https://wa.me/995593370862" target="_blank" rel="noopener" data-i18n-attr="aria-label:wa_label|title:wa_label" aria-label="Написать в WhatsApp" title="Написать в WhatsApp">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 20.5l1.6-5.4A8.4 8.4 0 1 1 21 11.5z"/><path d="M8.5 10.5h7M8.5 13.5h4.5"/></svg>
+</a>
+
+<script src="/i18n.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
