@@ -130,6 +130,17 @@
 
     video.muted = true; // без звука браузеры разрешают автозапуск (в т.ч. iPhone)
 
+    // Ролик начинается с плавного проявления из темноты (это нужно для
+    // бесшовного повтора). Но при первом показе это выглядело бы как
+    // «светлая картинка → темнота → снова светло», поэтому первый запуск
+    // начинаем сразу с проявившегося кадра.
+    var FIRST_START = 0.9;
+    video.addEventListener('loadedmetadata', function () {
+      if (video.currentTime < FIRST_START && video.duration > FIRST_START * 2) {
+        try { video.currentTime = FIRST_START; } catch (e) { /* не страшно */ }
+      }
+    }, { once: true });
+
     function refreshLabel() {
       var paused = video.paused;
       btn.classList.toggle('is-paused', paused);

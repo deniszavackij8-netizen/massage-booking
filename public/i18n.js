@@ -12,7 +12,7 @@
 
   var DICT = {
     ru: {
-      meta_title: 'Salt & Stone — массаж и спа в Батуми',
+      meta_title: 'Salt & Stone — массаж в Батуми',
       meta_description: 'Онлайн-запись на массаж в Батуми: выберите свободное время и получите подтверждение.',
       language: 'Язык',
       menu: 'Меню',
@@ -20,13 +20,13 @@
       nav_book: 'Запись онлайн',
       cta_book: 'Записаться',
 
-      hero_eyebrow: 'Массаж и спа · Батуми',
+      hero_eyebrow: 'Массаж · Батуми',
       hero_title_1: 'Запишитесь на массаж',
       hero_title_2: 'онлайн за минуту',
       hero_lead: 'Выберите дату, свободное время и оставьте телефон — мы получим уведомление и подтвердим запись.',
       hero_cta_time: 'Выбрать время',
       hero_cta_wa: 'Написать в WhatsApp',
-      hero_img_alt: 'Массаж спины в спа-кабинете',
+      hero_img_alt: 'Массаж спины',
       video_pause: 'Остановить видео',
       video_play: 'Включить видео',
 
@@ -42,7 +42,7 @@
       booking_title: 'Выберите удобное время',
       booking_lead: 'Занятые слоты показаны серым и недоступны для выбора — двойная запись на одно время исключена.',
       label_name: 'Имя и фамилия',
-      ph_name: 'Нино Беридзе',
+      ph_name: 'Анна Иванова',
       label_phone: 'Номер телефона',
       label_service: 'Услуга',
       choose_service: 'Выберите услугу',
@@ -129,7 +129,7 @@
     },
 
     en: {
-      meta_title: 'Salt & Stone — massage & spa in Batumi',
+      meta_title: 'Salt & Stone — massage in Batumi',
       meta_description: 'Book a massage in Batumi online: pick a free time and get a confirmation.',
       language: 'Language',
       menu: 'Menu',
@@ -137,13 +137,13 @@
       nav_book: 'Book online',
       cta_book: 'Book now',
 
-      hero_eyebrow: 'Massage & spa · Batumi',
+      hero_eyebrow: 'Massage · Batumi',
       hero_title_1: 'Book a massage',
       hero_title_2: 'online in a minute',
       hero_lead: 'Pick a date and a free time, leave your phone number — we’ll get notified and confirm your booking.',
       hero_cta_time: 'Choose a time',
       hero_cta_wa: 'Message us on WhatsApp',
-      hero_img_alt: 'Back massage in a spa room',
+      hero_img_alt: 'Back massage',
       video_pause: 'Pause video',
       video_play: 'Play video',
 
@@ -159,7 +159,7 @@
       booking_title: 'Choose a convenient time',
       booking_lead: 'Booked times are greyed out and can’t be selected — no double bookings.',
       label_name: 'Full name',
-      ph_name: 'Nino Beridze',
+      ph_name: 'Anna Smith',
       label_phone: 'Phone number',
       label_service: 'Service',
       choose_service: 'Choose a service',
@@ -246,7 +246,7 @@
     },
 
     ka: {
-      meta_title: 'Salt & Stone — მასაჟი და სპა ბათუმში',
+      meta_title: 'Salt & Stone — მასაჟი ბათუმში',
       meta_description: 'ონლაინ ჩაწერა მასაჟზე ბათუმში: აირჩიეთ თავისუფალი დრო და მიიღეთ დადასტურება.',
       language: 'ენა',
       menu: 'მენიუ',
@@ -254,13 +254,13 @@
       nav_book: 'ონლაინ ჩაწერა',
       cta_book: 'ჩაწერა',
 
-      hero_eyebrow: 'მასაჟი და სპა · ბათუმი',
+      hero_eyebrow: 'მასაჟი · ბათუმი',
       hero_title_1: 'ჩაეწერეთ მასაჟზე',
       hero_title_2: 'ონლაინ, ერთ წუთში',
       hero_lead: 'აირჩიეთ თარიღი და თავისუფალი დრო, დატოვეთ ტელეფონის ნომერი — მივიღებთ შეტყობინებას და დაგიდასტურებთ ჩაწერას.',
       hero_cta_time: 'დროის არჩევა',
       hero_cta_wa: 'მოგვწერეთ WhatsApp-ში',
-      hero_img_alt: 'ზურგის მასაჟი სპა-ოთახში',
+      hero_img_alt: 'ზურგის მასაჟი',
       video_pause: 'ვიდეოს შეჩერება',
       video_play: 'ვიდეოს ჩართვა',
 
@@ -276,7 +276,7 @@
       booking_title: 'აირჩიეთ სასურველი დრო',
       booking_lead: 'დაკავებული დრო ნაცრისფრადაა მონიშნული და მისი არჩევა შეუძლებელია — ორმაგი ჩაწერა გამორიცხულია.',
       label_name: 'სახელი და გვარი',
-      ph_name: 'ნინო ბერიძე',
+      ph_name: 'ანა ბერიძე',
       label_phone: 'ტელეფონის ნომერი',
       label_service: 'სერვისი',
       choose_service: 'აირჩიეთ სერვისი',
