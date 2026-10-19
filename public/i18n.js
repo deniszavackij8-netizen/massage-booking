@@ -31,7 +31,7 @@
       video_play: 'Включить видео',
 
       services_eyebrow: 'Услуги и цены',
-      services_title: 'Наши массажи',
+      services_title: 'Выберите массаж',
       services_lead: 'Выберите массаж — и сразу запишитесь на удобное время.',
       services_book: 'Записаться',
       services_loading: 'Загружаем услуги…',
@@ -90,6 +90,9 @@
       every_day: 'Ежедневно',
       contact_title: 'Связаться напрямую',
       footer_city: 'Батуми',
+      visit_title: 'Приходите и расслабьтесь',
+      visit_lead: 'Ждём вас каждый день с 10:00 до 20:00. Если опаздываете — просто напишите нам.',
+      tilt_btn: 'Наклоните телефон',
 
       wa_label: 'Написать в WhatsApp',
       wa_text: 'Здравствуйте! Хочу записаться на массаж',
@@ -150,7 +153,7 @@
       video_play: 'Play video',
 
       services_eyebrow: 'Services & prices',
-      services_title: 'Our massages',
+      services_title: 'Choose your massage',
       services_lead: 'Choose a massage and book a convenient time right away.',
       services_book: 'Book',
       services_loading: 'Loading services…',
@@ -209,6 +212,9 @@
       every_day: 'Every day',
       contact_title: 'Contact us directly',
       footer_city: 'Batumi',
+      visit_title: 'Come in and relax',
+      visit_lead: 'We’re open every day from 10:00 to 20:00. Running late? Just message us.',
+      tilt_btn: 'Tilt your phone',
 
       wa_label: 'Message us on WhatsApp',
       wa_text: 'Hello! I’d like to book a massage',
@@ -269,7 +275,7 @@
       video_play: 'ვიდეოს ჩართვა',
 
       services_eyebrow: 'სერვისები და ფასები',
-      services_title: 'ჩვენი მასაჟები',
+      services_title: 'აირჩიეთ მასაჟი',
       services_lead: 'აირჩიეთ მასაჟი და მაშინვე ჩაეწერეთ თქვენთვის სასურველ დროზე.',
       services_book: 'ჩაწერა',
       services_loading: 'სერვისები იტვირთება…',
@@ -328,6 +334,9 @@
       every_day: 'ყოველდღე',
       contact_title: 'დაგვიკავშირდით პირდაპირ',
       footer_city: 'ბათუმი',
+      visit_title: 'მობრძანდით და დაისვენეთ',
+      visit_lead: 'გელოდებით ყოველდღე 10:00-დან 20:00-მდე. თუ გაგვიანდებათ, უბრალოდ მოგვწერეთ.',
+      tilt_btn: 'დახარეთ ტელეფონი',
 
       wa_label: 'მოგვწერეთ WhatsApp-ში',
       wa_text: 'გამარჯობა! მინდა მასაჟზე ჩაწერა',

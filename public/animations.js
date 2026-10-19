@@ -82,7 +82,7 @@
   // ---------------------------------------------------------------------
   var hero = document.querySelector('.hero');
   if (introAllowed && hero) {
-    reveal(hero.querySelectorAll('.eyebrow.m-in, h1.m-in, .lead.m-in'), { y: 26, stagger: 140, delay: 80, duration: 1000 });
+    reveal(hero.querySelectorAll('.hero-place.m-in, h1.m-in, .lead.m-in'), { y: 26, stagger: 140, delay: 80, duration: 1000 });
     reveal(hero.querySelectorAll('.hero-ctas .m-in'), { y: 18, stagger: 110, delay: 480, duration: 900 });
 
     var art = hero.querySelector('.hero-art.m-in');
@@ -96,7 +96,7 @@
       };
       if (!reduce) {
         // Видео «раскрывается» из скруглённого окна чуть меньшего размера.
-        artParams.clipPath = ['inset(7% 7% 7% 7% round 26px)', 'inset(0% 0% 0% 0% round 26px)'];
+        artParams.clipPath = ['inset(14% 10% 0% 10% round 999px 999px 22px 22px)', 'inset(0% 0% 0% 0% round 999px 999px 22px 22px)'];
         artParams.scale = [0.97, 1];
       }
       animate(art, artParams);
@@ -136,7 +136,7 @@
         revealObserver.unobserve(entry.target);
         var el = entry.target;
         if (el._ssReveal) { el._ssReveal(); return; }
-        if (el.classList.contains('section-head')) {
+        if (el.classList.contains('step-head')) {
           el.classList.remove('m-reveal');
           reveal(el.children, { y: 22, stagger: 110 });
         } else {

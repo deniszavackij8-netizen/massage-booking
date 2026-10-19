@@ -8,33 +8,34 @@
 <title>Отмена записи — Salt & Stone</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Yeseva+One&family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
     --sand-50:#faf6f0; --sand-100:#f3ebe0; --sand-200:#e7dac8; --stone-700:#4a443c; --stone-900:#2c2822;
     --sea-500:#6f9c8d; --sea-700:#4f7568; --accent:#c08a5c; --good:#4f8a5c; --bad:#b4473f; --wa:#1fa855;
-    --bg:var(--sand-50); --fg:var(--stone-900); --fg-muted:var(--stone-700); --line:var(--sand-200); --brand:var(--sea-700);
-    --font-display:'Fraunces', Georgia, serif;
+    --basalt:#201c1a; --linen:#f2e9dc; --steam:#bdb1a3; --ink:#2a2420; --ink-soft:#6a5e55; --flame:#f2aa52;
+    --bg:var(--basalt); --fg:var(--ink); --fg-muted:var(--ink-soft); --line:#e0d3c1; --brand:var(--basalt);
+    --font-display:'Yeseva One', Georgia, serif;
     --font-body:'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans Georgian', sans-serif;
-    color-scheme: light;
+    color-scheme: dark;
   }
   *{box-sizing:border-box;}
-  body{margin:0; font-family:var(--font-body); background:var(--bg); color:var(--fg); -webkit-font-smoothing:antialiased;}
+  body{margin:0; font-family:var(--font-body); background:var(--bg); color:var(--linen); -webkit-font-smoothing:antialiased;}
   [hidden]{display:none !important;}
-  h1,h2{font-family:var(--font-display); font-weight:500; margin:0;}
+  h1,h2{font-family:var(--font-display); font-weight:400; margin:0;}
   html[lang="ka"] h1, html[lang="ka"] h2{font-family:var(--font-body); font-weight:700;}
   p{margin:0; line-height:1.6;}
-  header{border-bottom:1px solid var(--line); background:rgba(250,246,240,.92);}
+  header{border-bottom:1px solid rgba(242,233,220,.13); background:var(--basalt);}
   .bar{max-width:640px; margin:0 auto; height:68px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:0 max(20px, env(safe-area-inset-left,0px));}
-  .logo{font-family:var(--font-display); font-size:1.2rem; font-weight:600; display:flex; align-items:center; gap:10px; text-decoration:none; color:inherit;}
-  .logo-mark{width:28px; height:28px; border-radius:50%; background:radial-gradient(circle at 32% 30%, var(--sea-500), var(--sea-700));}
-  .lang-switch{display:inline-flex; border:1px solid var(--line); border-radius:999px; padding:3px; background:#fff;}
-  .lang-switch button{border:none; background:transparent; font:inherit; font-size:.76rem; font-weight:800; padding:6px 10px; min-width:34px; border-radius:999px; cursor:pointer; color:var(--fg-muted);}
-  .lang-switch button.lang-active{background:var(--brand); color:#fff;}
-  .lang-switch button:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+  .logo{font-family:var(--font-display); font-size:1.2rem; font-weight:400; display:flex; align-items:center; gap:10px; text-decoration:none; color:inherit;}
+  .logo-mark{width:28px; height:20px; border-radius:50% 50% 46% 54% / 58% 56% 44% 42%; background:radial-gradient(ellipse at 34% 28%, #8a817a 0%, #4a433e 34%, #221d1b 78%);}
+  .lang-switch{display:inline-flex; border:1px solid rgba(242,233,220,.13); border-radius:999px; padding:3px; background:rgba(242,233,220,.04);}
+  .lang-switch button{border:none; background:transparent; font:inherit; font-size:.76rem; font-weight:800; padding:6px 10px; min-width:34px; border-radius:999px; cursor:pointer; color:var(--steam);}
+  .lang-switch button.lang-active{background:var(--linen); color:var(--ink);}
+  .lang-switch button:focus-visible{outline:2px solid var(--flame); outline-offset:1px;}
   main{max-width:640px; margin:0 auto; padding:clamp(28px,6vw,56px) max(20px, env(safe-area-inset-left,0px)) 60px;}
   h1{font-size:clamp(1.7rem, 4vw, 2.1rem); margin-bottom:22px;}
-  .card{background:#fff; border:1px solid var(--line); border-radius:22px; padding:clamp(20px,4vw,30px); display:grid; gap:16px;}
+  .card{background:var(--linen); color:var(--ink); border:none; border-radius:28px 28px 28px 10px; padding:clamp(20px,4vw,30px); display:grid; gap:16px;}
   .card h2{font-size:1.15rem;}
   .details{display:grid; gap:8px; font-size:.95rem;}
   .row{display:flex; justify-content:space-between; gap:14px; border-bottom:1px dashed var(--line); padding-bottom:8px;}
@@ -50,7 +51,7 @@
   .btn-danger:disabled{opacity:.6; cursor:not-allowed;}
   .btn-ghost{background:#fff; color:var(--fg); border-color:var(--line);}
   .btn-wa{background:var(--wa); color:#fff;}
-  .btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  .btn:focus-visible{outline:2px solid var(--flame); outline-offset:2px;}
   @media (max-width:480px){ .actions .btn{flex:1 1 100%;} }
 </style>
 </head>
