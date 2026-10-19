@@ -254,18 +254,6 @@
     if (current && findService(current)) serviceSelect.value = current;
   }
 
-  // Какой предмет «живёт» в карточке услуги.
-  var SERVICE_OBJECTS = {
-    back: 'stones',
-    anticellulite: 'bottle',
-    neck: 'towel',
-    'four-hands': 'candles',
-    sport: 'bamboo',
-    lymph: 'orchid',
-    'full-body': 'salt',
-    combo: 'ritual'
-  };
-
   function renderServiceCards() {
     servicesGrid.textContent = '';
     if (servicesFailed) {
@@ -282,22 +270,7 @@
     }
     services.forEach(function (s) {
       var card = el('article', 'service-card');
-      // У каждой услуги свой предмет (3D, а пока он не загрузился — картинка).
-      var kind = SERVICE_OBJECTS[s.id] || 'stones';
-      var obj = el('div', 'obj');
-      obj.setAttribute('data-3d', kind);
-      obj.setAttribute('aria-hidden', 'true');
-      var img = el('img', 'obj-fallback');
-      img.src = '/media/3d/' + kind + '.webp';
-      img.alt = '';
-      img.width = 360;
-      img.height = 360;
-      img.loading = 'lazy';
-      img.decoding = 'async';
-      obj.appendChild(img);
-      card.appendChild(obj);
-      var info = el('div', 'service-info');
-      info.appendChild(el('h3', null, I18N.serviceName(s)));
+      card.appendChild(el('h3', null, I18N.serviceName(s)));
       var list = el('ul', 'service-prices');
       s.durations.forEach(function (d) {
         var li = el('li');
@@ -305,12 +278,11 @@
         li.appendChild(el('b', null, d.price + '₾'));
         list.appendChild(li);
       });
-      info.appendChild(list);
+      card.appendChild(list);
       var btn = el('button', 'btn btn-primary', t('services_book'));
       btn.type = 'button';
       btn.addEventListener('click', function () { chooseServiceFromCard(s); });
-      info.appendChild(btn);
-      card.appendChild(info);
+      card.appendChild(btn);
       servicesGrid.appendChild(card);
     });
   }
