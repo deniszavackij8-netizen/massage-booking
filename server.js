@@ -90,7 +90,6 @@ function rateKey(req) {
   return ip;
 }
 
-const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 
 // Слишком простой пароль (короткий или из списка самых частых) — админку
@@ -665,12 +664,6 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000).unref();
 
-// Уведомление в Telegram о входе в админку с нового адреса (замена второго
-// фактора): если пароль когда-нибудь утечёт, вы сразу увидите чужой вход.
-// Один и тот же адрес повторно не сообщаем 12 часов.
-const ADMIN_LOGIN_NOTICE_MS = 12 * 60 * 60 * 1000;
-const adminLoginSeen = new Map(); // ключ IP/подсети -> время последнего уведомления
-
 function describeBrowser(ua) {
   ua = String(ua || '');
   const browser = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /YaBrowser/.test(ua) ? 'Яндекс Браузер'
@@ -680,77 +673,282 @@ function describeBrowser(ua) {
   return `${browser}, ${os}`;
 }
 
-function notifyAdminLogin(req, key) {
-  const now = Date.now();
-  const last = adminLoginSeen.get(key);
-  if (last && now - last < ADMIN_LOGIN_NOTICE_MS) return;
-  adminLoginSeen.set(key, now);
-  if (adminLoginSeen.size > 1000) adminLoginSeen.clear();
-  sendTelegramText(
-    '🔐 Вход в админку\n' +
-    `IP: ${clientIp(req)}\n` +
-    `Устройство: ${describeBrowser(req.headers['user-agent'])}\n` +
-    'Если это были не вы — сразу смените ADMIN_PASSWORD на Render (Environment) и сохраните.'
-  ).catch((err) => console.error('Telegram (вход в админку):', err.message));
+// ---------------------------------------------------------------------------
+// Вход в админку: своя страница входа, пароль + код из Telegram, сессия в
+// защищённой cookie.
+//
+// Почему не «окошко браузера» (Basic Auth), как раньше: браузер запоминает
+// такой вход до закрытия и часто сохраняет пароль — любой, кто взял ваш
+// телефон или компьютер, заходил без пароля, а «выйти» было нельзя.
+//
+//  1. Пароль (5 ошибок с одного IP → блокировка на 20 минут).
+//  2. Код из 6 цифр приходит в Telegram владельцу; действует 5 минут,
+//     5 попыток, только с того же адреса, откуда ввели пароль.
+//  3. После входа — cookie: HttpOnly (недоступна скриптам), Secure (только
+//     https), SameSite=Strict (не отправляется с чужих сайтов). Подписана
+//     секретом, живёт 12 часов, без действий — 2 часа. Кнопки «Выйти» и
+//     «Выйти на всех устройствах». Смена ADMIN_PASSWORD выкидывает всех.
+//  Отключить код можно переменной ADMIN_2FA=off (не рекомендуется).
+// ---------------------------------------------------------------------------
+const SESSION_COOKIE = '__Host-ss_admin';
+const SESSION_MAX_MS = 12 * 60 * 60 * 1000;
+const SESSION_IDLE_MS = 2 * 60 * 60 * 1000;
+const SESSION_REFRESH_MS = 5 * 60 * 1000;
+const CODE_TTL_MS = 5 * 60 * 1000;
+const CODE_MAX_TRIES = 5;
+const REVOKE_KEY = 'admin_sessions_revoked_before';
+const TWO_FACTOR = String(process.env.ADMIN_2FA || '').toLowerCase() !== 'off';
+
+// Ключ подписи сессий зависит от пароля: сменили пароль — все старые
+// сессии сразу недействительны.
+const SESSION_KEY = crypto.createHmac('sha256', String(process.env.SESSION_SECRET || 'salt-and-stone'))
+  .update('admin-session:' + ADMIN_PASSWORD).digest();
+
+let revokedBefore = 0;
+let revokedCheckedAt = 0;
+async function getRevokedBefore() {
+  if (Date.now() - revokedCheckedAt > 30 * 1000) {
+    try {
+      revokedBefore = await store.getStateTime(REVOKE_KEY);
+      revokedCheckedAt = Date.now();
+    } catch (err) {
+      console.error('Не удалось проверить отзыв сессий:', err.message);
+    }
+  }
+  return revokedBefore;
 }
 
-function basicAuth(req, res, next) {
-  if (!ADMIN_PASSWORD) {
-    return res
-      .status(503)
-      .send('Админ-панель не настроена: задайте ADMIN_PASSWORD в файле .env и перезапустите сервер.');
+function b64u(buf) { return Buffer.from(buf).toString('base64url'); }
+
+function signSession(data) {
+  const payload = b64u(JSON.stringify(data));
+  const sig = b64u(crypto.createHmac('sha256', SESSION_KEY).update(payload).digest());
+  return `${payload}.${sig}`;
+}
+
+function readSessionToken(token) {
+  if (typeof token !== 'string' || token.length > 600 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) return null;
+  const [payload, sig] = token.split('.');
+  const expected = b64u(crypto.createHmac('sha256', SESSION_KEY).update(payload).digest());
+  if (!timingSafeStringEqual(sig, expected)) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (!data || data.v !== 1 || typeof data.iat !== 'number' || typeof data.seen !== 'number') return null;
+    return data;
+  } catch (err) {
+    return null;
   }
-  if (ADMIN_PASSWORD_WEAK) {
-    return res
-      .status(503)
-      .send('Пароль админки слишком простой. Задайте в ADMIN_PASSWORD сложный пароль (не меньше 12 символов, буквы и цифры) и перезапустите сервер.');
+}
+
+function getCookie(req, name) {
+  const header = req.headers.cookie || '';
+  for (const part of header.split(';')) {
+    const i = part.indexOf('=');
+    if (i === -1) continue;
+    if (part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
   }
+  return null;
+}
 
-  const ip = rateKey(req);
-  const state = getLoginState(ip);
+function setSessionCookie(res, data) {
+  const maxAge = Math.max(1, Math.floor((data.iat + SESSION_MAX_MS - Date.now()) / 1000));
+  res.append('Set-Cookie', `${SESSION_COOKIE}=${signSession(data)}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Strict`);
+}
 
-  if (state.lockedUntil && state.lockedUntil > Date.now()) {
-    const waitMinutes = Math.ceil((state.lockedUntil - Date.now()) / 60000);
-    res.set('Retry-After', String(Math.ceil((state.lockedUntil - Date.now()) / 1000)));
-    return res
-      .status(429)
-      .send(`Слишком много неудачных попыток входа. Попробуйте снова через ${waitMinutes} мин.`);
+function clearSessionCookie(res) {
+  res.append('Set-Cookie', `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict`);
+}
+
+// Возвращает данные сессии или null (и сам продлевает cookie при активности).
+async function currentSession(req, res) {
+  const data = readSessionToken(getCookie(req, SESSION_COOKIE));
+  if (!data) return null;
+  const now = Date.now();
+  if (now - data.iat > SESSION_MAX_MS || now - data.seen > SESSION_IDLE_MS || data.iat > now + 60000) return null;
+  if (data.iat <= await getRevokedBefore()) return null;
+  if (now - data.seen > SESSION_REFRESH_MS) setSessionCookie(res, { ...data, seen: now });
+  return data;
+}
+
+function adminConfigProblem() {
+  if (!ADMIN_PASSWORD) return 'Админ-панель не настроена: задайте ADMIN_PASSWORD и перезапустите сервер.';
+  if (ADMIN_PASSWORD_WEAK) return 'Пароль админки слишком простой. Задайте в ADMIN_PASSWORD сложный пароль (не меньше 12 символов, буквы и цифры) и перезапустите сервер.';
+  return null;
+}
+
+// Защита от подделки запросов с чужих сайтов: изменения в админке принимаем
+// только со своего сайта и только от нашего admin.js (особый заголовок
+// чужой сайт без разрешения CORS отправить не может).
+function sameOriginWrite(req) {
+  if (req.method === 'GET' || req.method === 'HEAD') return true;
+  if (req.headers['x-requested-with'] !== 'ss-admin') return false;
+  const origin = req.headers.origin;
+  if (origin) {
+    let host;
+    try { host = new URL(origin).host; } catch (e) { return false; }
+    if (host !== req.headers.host) return false;
   }
+  return true;
+}
 
-  const header = req.headers.authorization || '';
-  const [scheme, encoded] = header.split(' ');
+// Для /api/admin/*: без входа — 401 (admin.js сам откроет страницу входа).
+const requireAdmin = asyncHandler(async (req, res, next) => {
+  const problem = adminConfigProblem();
+  if (problem) return fail(res, 503, 'admin_not_configured', problem);
+  if (!sameOriginWrite(req)) return fail(res, 403, 'forbidden', 'Запрос отклонён');
+  const session = await currentSession(req, res);
+  if (!session) return fail(res, 401, 'auth_required', 'Нужно войти в админку');
+  req.adminSession = session;
+  return next();
+});
 
-  if (scheme === 'Basic' && encoded) {
-    let decoded = '';
-    try {
-      decoded = Buffer.from(encoded, 'base64').toString('utf8');
-    } catch (err) {
-      decoded = '';
-    }
-    const sepIndex = decoded.indexOf(':');
-    const user = sepIndex === -1 ? decoded : decoded.slice(0, sepIndex);
-    const pass = sepIndex === -1 ? '' : decoded.slice(sepIndex + 1);
+// Для страниц /admin/*: без входа — на страницу входа.
+const requireAdminPage = asyncHandler(async (req, res, next) => {
+  const problem = adminConfigProblem();
+  if (problem) return res.status(503).send(problem);
+  const session = await currentSession(req, res);
+  if (!session) return res.redirect(302, '/admin/login');
+  return next();
+});
 
-    const userOk = timingSafeStringEqual(user, ADMIN_USER);
-    const passOk = timingSafeStringEqual(pass, ADMIN_PASSWORD);
+// Коды подтверждения, ожидающие ввода: id -> { codeHash, exp, tries, ipKey }
+const loginChallenges = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, c] of loginChallenges.entries()) if (c.exp < now) loginChallenges.delete(id);
+}, 60 * 1000).unref();
 
-    if (userOk && passOk) {
-      clearLoginAttempts(ip);
-      notifyAdminLogin(req, ip);
-      return next();
-    }
-  }
+function hashCode(id, code) {
+  return crypto.createHmac('sha256', SESSION_KEY).update(`${id}:${code}`).digest('hex');
+}
 
-  // Первый заход без пароля (браузер ещё не показал окно входа) — это не
-  // неудачная попытка, просто просим представиться.
-  if (header) registerFailedLogin(ip);
-  res.set('WWW-Authenticate', 'Basic realm="Admin panel"');
-  return res.status(401).send('Требуется авторизация');
+function lockoutResponse(res, state) {
+  const waitMinutes = Math.ceil((state.lockedUntil - Date.now()) / 60000);
+  res.set('Retry-After', String(Math.ceil((state.lockedUntil - Date.now()) / 1000)));
+  return fail(res, 429, 'login_locked', `Слишком много неудачных попыток входа. Попробуйте снова через ${waitMinutes} мин.`);
+}
+
+function startSession(req, res, ip) {
+  const now = Date.now();
+  setSessionCookie(res, { v: 1, iat: now, seen: now, sid: crypto.randomBytes(9).toString('base64url') });
+  clearLoginAttempts(ip);
+  sendTelegramText(
+    '✅ Выполнен вход в админку\n' +
+    `IP: ${clientIp(req)}\n` +
+    `Устройство: ${describeBrowser(req.headers['user-agent'])}\n` +
+    'Если это были не вы — нажмите в админке «Выйти на всех устройствах» и смените ADMIN_PASSWORD на Render.'
+  ).catch((err) => console.error('Telegram (вход в админку):', err.message));
 }
 
 // ---------------------------------------------------------------------------
 // Публичное API
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Вход / выход из админки
+// ---------------------------------------------------------------------------
+const adminLoginLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: 'Слишком много попыток входа. Подождите немного.'
+});
+
+// Шаг 1: пароль.
+app.post('/api/admin/login', adminLoginLimiter, asyncHandler(async (req, res) => {
+  const problem = adminConfigProblem();
+  if (problem) return fail(res, 503, 'admin_not_configured', problem);
+  if (!sameOriginWrite(req)) return fail(res, 403, 'forbidden', 'Запрос отклонён');
+  const ip = rateKey(req);
+  const state = getLoginState(ip);
+  if (state.lockedUntil && state.lockedUntil > Date.now()) return lockoutResponse(res, state);
+
+  const password = (req.body || {}).password;
+  if (typeof password !== 'string' || password.length > 200 || !timingSafeStringEqual(password, ADMIN_PASSWORD)) {
+    registerFailedLogin(ip);
+    const after = getLoginState(ip);
+    if (after.lockedUntil && after.lockedUntil > Date.now()) return lockoutResponse(res, after);
+    return fail(res, 401, 'bad_password', 'Неверный пароль');
+  }
+
+  if (!TWO_FACTOR) {
+    startSession(req, res, ip);
+    return res.json({ success: true });
+  }
+  if (!BOT_TOKEN || CHAT_IDS.length === 0) {
+    return fail(res, 503, 'no_telegram', 'Вход по коду не настроен: нет BOT_TOKEN/CHAT_ID.');
+  }
+
+  // Шаг 2 — код в Telegram. На один адрес — один действующий код.
+  for (const [id, c] of loginChallenges.entries()) if (c.ipKey === ip) loginChallenges.delete(id);
+  if (loginChallenges.size > 200) loginChallenges.clear();
+  const id = crypto.randomBytes(24).toString('base64url');
+  const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  loginChallenges.set(id, { codeHash: hashCode(id, code), exp: Date.now() + CODE_TTL_MS, tries: 0, ipKey: ip });
+  try {
+    await sendTelegramText(
+      `🔑 Код для входа в админку: ${code}\n` +
+      'Действует 5 минут. Никому его не сообщайте.\n' +
+      `Запрос: IP ${clientIp(req)}, ${describeBrowser(req.headers['user-agent'])}.\n` +
+      'Если вы сейчас не входите в админку — кто-то знает пароль: смените ADMIN_PASSWORD на Render.'
+    );
+  } catch (err) {
+    loginChallenges.delete(id);
+    console.error('Telegram (код входа):', err.message);
+    return fail(res, 502, 'code_send_failed', 'Не удалось отправить код в Telegram. Попробуйте ещё раз через минуту.');
+  }
+  return res.json({ step: 'code', challenge: id });
+}));
+
+// Шаг 2: код из Telegram.
+app.post('/api/admin/verify', adminLoginLimiter, asyncHandler(async (req, res) => {
+  const problem = adminConfigProblem();
+  if (problem) return fail(res, 503, 'admin_not_configured', problem);
+  if (!sameOriginWrite(req)) return fail(res, 403, 'forbidden', 'Запрос отклонён');
+  const ip = rateKey(req);
+  const state = getLoginState(ip);
+  if (state.lockedUntil && state.lockedUntil > Date.now()) return lockoutResponse(res, state);
+
+  const { challenge, code } = req.body || {};
+  const c = typeof challenge === 'string' ? loginChallenges.get(challenge) : null;
+  if (!c || c.exp < Date.now() || c.ipKey !== ip) {
+    if (c) loginChallenges.delete(challenge);
+    return fail(res, 410, 'code_expired', 'Код устарел. Введите пароль ещё раз — придёт новый код.');
+  }
+  const clean = typeof code === 'string' ? code.replace(/\s+/g, '') : '';
+  if (!/^\d{6}$/.test(clean) || !timingSafeStringEqual(hashCode(challenge, clean), c.codeHash)) {
+    c.tries += 1;
+    registerFailedLogin(ip);
+    if (c.tries >= CODE_MAX_TRIES) {
+      loginChallenges.delete(challenge);
+      return fail(res, 410, 'code_expired', 'Слишком много неверных кодов. Введите пароль ещё раз.');
+    }
+    const after = getLoginState(ip);
+    if (after.lockedUntil && after.lockedUntil > Date.now()) {
+      loginChallenges.delete(challenge);
+      return lockoutResponse(res, after);
+    }
+    return fail(res, 401, 'bad_code', 'Неверный код');
+  }
+  loginChallenges.delete(challenge);
+  startSession(req, res, ip);
+  return res.json({ success: true });
+}));
+
+// Выход на этом устройстве.
+app.post('/api/admin/logout', (req, res) => {
+  if (!sameOriginWrite(req)) return fail(res, 403, 'forbidden', 'Запрос отклонён');
+  clearSessionCookie(res);
+  return res.json({ success: true });
+});
+
+// Выход на всех устройствах: все выданные ранее сессии становятся недействительными.
+app.post('/api/admin/logout-all', requireAdmin, asyncHandler(async (req, res) => {
+  await store.setStateNow(REVOKE_KEY);
+  revokedCheckedAt = 0;
+  clearSessionCookie(res);
+  sendTelegramText('🚪 Выполнен выход из админки на всех устройствах.').catch(() => {});
+  return res.json({ success: true });
+}));
 
 // GET /api/health — лёгкая проверка «сервер жив» (без обращения к базе).
 app.get('/api/health', (req, res) => {
@@ -1252,11 +1450,11 @@ app.get('/api/cron/daily-summary', cronLimiter, asyncHandler(async (req, res) =>
 // Защищённое API админ-панели
 // ---------------------------------------------------------------------------
 
-app.get('/api/admin/bookings', basicAuth, asyncHandler(async (req, res) => {
+app.get('/api/admin/bookings', requireAdmin, asyncHandler(async (req, res) => {
   res.json({ bookings: await store.allBookings() });
 }));
 
-app.delete('/api/admin/bookings/:id', basicAuth, asyncHandler(async (req, res) => {
+app.delete('/api/admin/bookings/:id', requireAdmin, asyncHandler(async (req, res) => {
   const deleted = await store.deleteBooking(String(req.params.id));
   if (!deleted) {
     return fail(res, 404, 'not_found', 'Запись не найдена');
@@ -1264,13 +1462,13 @@ app.delete('/api/admin/bookings/:id', basicAuth, asyncHandler(async (req, res) =
   return res.json({ success: true });
 }));
 
-app.get('/api/admin/blocks', basicAuth, asyncHandler(async (req, res) => {
+app.get('/api/admin/blocks', requireAdmin, asyncHandler(async (req, res) => {
   res.json({ blocks: await store.allBlocks() });
 }));
 
 // POST /api/admin/blocks  { date, time, note }
 // time: конкретный час из SLOTS, или null/отсутствует — заблокировать весь день.
-app.post('/api/admin/blocks', basicAuth, asyncHandler(async (req, res) => {
+app.post('/api/admin/blocks', requireAdmin, asyncHandler(async (req, res) => {
   const { date, time, note } = req.body || {};
 
   if (!date || !isValidDate(date)) {
@@ -1298,7 +1496,7 @@ app.post('/api/admin/blocks', basicAuth, asyncHandler(async (req, res) => {
   return res.json({ success: true, block });
 }));
 
-app.delete('/api/admin/blocks/:id', basicAuth, asyncHandler(async (req, res) => {
+app.delete('/api/admin/blocks/:id', requireAdmin, asyncHandler(async (req, res) => {
   const deleted = await store.deleteBlock(String(req.params.id));
   if (!deleted) {
     return fail(res, 404, 'not_found', 'Блокировка не найдена');
@@ -1307,7 +1505,7 @@ app.delete('/api/admin/blocks/:id', basicAuth, asyncHandler(async (req, res) => 
 }));
 
 // GET /api/admin/whoami — какой IP сервер видит у вас (проверка TRUST_PROXY).
-app.get('/api/admin/whoami', basicAuth, (req, res) => {
+app.get('/api/admin/whoami', requireAdmin, (req, res) => {
   res.json({
     ipSeenByServer: clientIp(req),
     trustProxy: TRUST_PROXY_ENABLED ? 'trusted networks (private + Cloudflare)' : 'off',
@@ -1319,7 +1517,11 @@ app.get('/api/admin/whoami', basicAuth, (req, res) => {
 app.use('/api', (req, res) => fail(res, 404, 'not_found', 'Не найдено'));
 
 // Страница админ-панели (защищена тем же Basic Auth).
-app.use('/admin', basicAuth, express.static(path.join(__dirname, 'admin')));
+// Страница входа открыта всем (на ней только форма).
+app.get('/admin/login', (req, res) => res.sendFile(path.join(__dirname, 'admin-login', 'login.html')));
+app.get('/admin/login.js', (req, res) => res.sendFile(path.join(__dirname, 'admin-login', 'login.js')));
+// Сама админка — только после входа.
+app.use('/admin', requireAdminPage, express.static(path.join(__dirname, 'admin')));
 
 // Последний обработчик ошибок: любая непредвиденная ошибка — аккуратный
 // ответ 500 без технических подробностей (стек, пути к файлам) наружу.

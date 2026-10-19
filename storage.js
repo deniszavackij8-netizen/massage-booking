@@ -191,6 +191,23 @@ function createFileStore() {
       });
     },
 
+    // Отметка времени по ключу (например, «все сессии админки до этого
+    // момента недействительны»).
+    setStateNow(key) {
+      return exclusive(async () => {
+        const state = readJson(STATE_FILE, {});
+        state[key] = new Date().toISOString();
+        writeJsonAtomic(STATE_FILE, state);
+      });
+    },
+
+    async getStateTime(key) {
+      const state = readJson(STATE_FILE, {});
+      const v = state[key];
+      const t = v ? Date.parse(v) : NaN;
+      return Number.isNaN(t) ? 0 : t;
+    },
+
     async close() {}
   };
 }
@@ -453,6 +470,18 @@ function createPgStore(databaseUrl) {
 
     async releaseState(key) {
       await pool.query('DELETE FROM app_state WHERE key = $1', [key]);
+    },
+
+    async setStateNow(key) {
+      await pool.query(
+        'INSERT INTO app_state (key, created_at) VALUES ($1, now()) ON CONFLICT (key) DO UPDATE SET created_at = now()',
+        [key]
+      );
+    },
+
+    async getStateTime(key) {
+      const { rows } = await pool.query('SELECT created_at FROM app_state WHERE key = $1', [key]);
+      return rows.length ? new Date(rows[0].created_at).getTime() : 0;
     },
 
     close() {

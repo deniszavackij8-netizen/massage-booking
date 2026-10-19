@@ -74,6 +74,10 @@
   .block-msg.error{color:var(--bad);}
   .block-msg.success{color:var(--good);}
 
+  .top-bar{display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap;}
+  .session-actions{display:flex; gap:8px; flex-wrap:wrap;}
+  .session-actions button{border:1px solid var(--line); background:#fff; border-radius:10px; padding:9px 14px; font:inherit; font-size:.86rem; font-weight:700; cursor:pointer; color:var(--fg);}
+  .session-actions button:hover{border-color:var(--bad); color:var(--bad);}
   @media (max-width:640px){
     table{font-size:.82rem;}
     th, td{padding:10px;}
@@ -83,8 +87,16 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Админ-панель</h1>
-  <p class="sub">Salt & Stone — панель администратора</p>
+  <div class="top-bar">
+    <div>
+      <h1>Админ-панель</h1>
+      <p class="sub">Salt & Stone — панель администратора</p>
+    </div>
+    <div class="session-actions">
+      <button type="button" id="logoutBtn">Выйти</button>
+      <button type="button" id="logoutAllBtn">Выйти на всех устройствах</button>
+    </div>
+  </div>
 
   <div class="stat-row" id="statRow"></div>
 

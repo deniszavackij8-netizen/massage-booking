@@ -14,6 +14,32 @@
 
   var LANG_LABEL = { ru: 'RU', en: 'EN', ka: 'KA' };
 
+  // Все запросы к админ-API: с особым заголовком (защита от подделки
+  // запросов с чужих сайтов). Если сессия закончилась — на страницу входа.
+  function adminFetch(url, opts) {
+    opts = opts || {};
+    var headers = opts.headers || {};
+    headers['X-Requested-With'] = 'ss-admin';
+    opts.headers = headers;
+    opts.credentials = 'same-origin';
+    return fetch(url, opts).then(function (res) {
+      if (res.status === 401) {
+        location.replace('/admin/login');
+        throw new Error('Нужно войти заново');
+      }
+      return res;
+    });
+  }
+
+  function logout(all) {
+    if (all && !window.confirm('Выйти из админки на всех устройствах (телефоны, компьютеры)?')) return;
+    adminFetch(all ? '/api/admin/logout-all' : '/api/admin/logout', { method: 'POST' })
+      .catch(function () {})
+      .then(function () { location.replace('/admin/login'); });
+  }
+  $('logoutBtn').addEventListener('click', function () { logout(false); });
+  $('logoutAllBtn').addEventListener('click', function () { logout(true); });
+
   function el(tag, className, text) {
     var node = document.createElement(tag);
     if (className) node.className = className;
@@ -119,7 +145,7 @@
     loadingEl.textContent = 'Загрузка записей…';
     tableEl.hidden = true;
 
-    fetch('/api/admin/bookings')
+    adminFetch('/api/admin/bookings')
       .then(function (res) {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         return res.json();
@@ -138,7 +164,7 @@
   function deleteBooking(id) {
     if (!window.confirm('Отменить эту запись? Время снова станет свободным.')) return;
 
-    fetch('/api/admin/bookings/' + encodeURIComponent(id), { method: 'DELETE' })
+    adminFetch('/api/admin/bookings/' + encodeURIComponent(id), { method: 'DELETE' })
       .then(function (res) {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         return res.json();
@@ -202,7 +228,7 @@
   }
 
   function loadBlocks() {
-    fetch('/api/admin/blocks')
+    adminFetch('/api/admin/blocks')
       .then(function (res) {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         return res.json();
@@ -224,7 +250,7 @@
 
   function deleteBlock(id) {
     if (!window.confirm('Снять эту блокировку?')) return;
-    fetch('/api/admin/blocks/' + encodeURIComponent(id), { method: 'DELETE' })
+    adminFetch('/api/admin/blocks/' + encodeURIComponent(id), { method: 'DELETE' })
       .then(function (res) {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         return res.json();
@@ -252,7 +278,7 @@
     addBlockBtn.disabled = true;
     addBlockBtn.textContent = 'Блокируем…';
 
-    fetch('/api/admin/blocks', {
+    adminFetch('/api/admin/blocks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
