@@ -18,6 +18,7 @@ const params = new URLSearchParams(location.search);
 const FORCE = params.get('force3d') === '1';         // для автотестов
 const GOVERNOR = !FORCE || params.get('gov') === '1';
 const state = window.SS3D = {
+  calm: false,
   status: 'waiting', tier: null, reason: null, frames: 0, renders: {}, live: 0, scale: 1, static: false, lastFrameMs: 0
 };
 
@@ -45,9 +46,12 @@ function webglInfo() {
 const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const saveData = !!(navigator.connection && navigator.connection.saveData);
 
-if (reduce && !FORCE) {
-  off('reduced-motion');
-} else if (saveData && !FORCE) {
+// «Уменьшить движение» (в Windows это выключенные «Эффекты анимации»):
+// 3D показываем, но в спокойном режиме — предметы сами не двигаются,
+// а только откликаются на мышь/наведение (движение по действию человека).
+const CALM = reduce && params.get('calm') !== '0';
+state.calm = CALM;
+if (saveData && !FORCE) {
   off('save-data');
 } else {
   const info = webglInfo();
@@ -191,6 +195,7 @@ async function start(info) {
   // Курсор и наклон телефона (для натюрморта на первом экране)
   // ---------------------------------------------------------------------
   let pointer = null;
+  let lastPointerAt = 0;
   const heroEl = document.querySelector('[data-3d="hero"]');
   window.addEventListener('pointermove', (e) => {
     if (e.pointerType !== 'mouse' || !heroEl) return;
@@ -199,8 +204,10 @@ async function start(info) {
       x: Math.max(-1, Math.min(1, (e.clientX - (r.left + r.width / 2)) / (window.innerWidth / 2))),
       y: Math.max(-1, Math.min(1, (e.clientY - (r.top + r.height / 2)) / (window.innerHeight / 2)))
     };
+    lastPointerAt = performance.now();
+    if (CALM) wake();
   }, { passive: true });
-  document.documentElement.addEventListener('pointerleave', () => { pointer = null; });
+  document.documentElement.addEventListener('pointerleave', () => { pointer = null; lastPointerAt = performance.now(); if (CALM) wake(); });
 
   const tiltBtn = document.getElementById('tiltBtn');
   if (tiltBtn && coarse && 'DeviceOrientationEvent' in window) {
@@ -216,6 +223,8 @@ async function start(info) {
       window.addEventListener('deviceorientation', (ev) => {
         if (ev.gamma == null) return;
         pointer = { x: Math.max(-1, Math.min(1, ev.gamma / 28)), y: Math.max(-1, Math.min(1, ((ev.beta || 45) - 45) / 30)) };
+        lastPointerAt = performance.now();
+        if (CALM) wake();
       });
     });
   }
@@ -227,7 +236,7 @@ async function start(info) {
   const servicesSec = document.getElementById('services');
   const bookingSec = document.getElementById('booking');
   function setupRoller() {
-    const wide = window.innerWidth >= 1400 && !coarse;
+    const wide = window.innerWidth >= 1400 && !coarse && !CALM;
     if (wide && !roller && servicesSec && bookingSec) {
       const el = document.createElement('div');
       el.className = 'roller obj';
@@ -287,7 +296,7 @@ async function start(info) {
   function animated(s) {
     if (state.static) return false;
     switch (s.kind) {
-      case 'hero': return true;
+      case 'hero': return !CALM || performance.now() - lastPointerAt < 2500;
       case 'roller': return false;
       case 'stack': return !(s.scene && s.scene.done) || s.restart;
       default: return tier === 'high' || s.hover;
@@ -325,7 +334,7 @@ async function start(info) {
         if (!s.scene) s.scene = buildScene(kit, s.kind);
         const dt = s.lastT == null ? 1 / 60 : Math.min(0.1, now - s.lastT);
         s.lastT = now;
-        const input = { pointer: s.kind === 'hero' ? pointer : null, hover: s.hover, roll: s.roll || 0, restart: !!s.restart };
+        const input = { pointer: s.kind === 'hero' ? pointer : null, hover: s.hover, roll: s.roll || 0, restart: !!s.restart, calm: CALM };
         s.restart = false;
         const cam = s.scene.camera;
         if (cam.aspect !== w / h) { cam.aspect = w / h; cam.updateProjectionMatrix(); }

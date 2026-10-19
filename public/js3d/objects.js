@@ -607,11 +607,11 @@ function turntable(kit, build, { cam = [0, 1.15, 3.7], target = [0, 0.45, 0], sh
   return {
     scene, camera: cameraObj,
     update(t, dt, input) {
-      const speed = input.hover ? 1.6 : 0.22 * speedK;
+      const speed = input.hover ? 1.6 : (input.calm ? 0 : 0.22 * speedK);
       angle += dt * speed;
       spin.rotation.y = angle;
       lift += ((input.hover ? 0.12 : 0) - lift) * Math.min(1, dt * 6);
-      spin.position.y = lift + Math.sin(t * 1.1) * 0.015;
+      spin.position.y = lift + (input.calm ? 0 : Math.sin(t * 1.1) * 0.015);
       sh.material.opacity = 0.55 - lift * 1.6;
       obj.traverse((o) => { if (o.userData.update) o.userData.update(t); });
     }
@@ -784,8 +784,9 @@ const BUILDERS = {
       scene, camera: cam,
       update(t, dt, input) {
         // поворот за курсором / наклоном телефона, иначе медленное покачивание
-        const tx = input.pointer ? input.pointer.x * 0.42 : Math.sin(t * 0.16) * 0.28;
-        const ty = input.pointer ? input.pointer.y * 0.1 : Math.sin(t * 0.11) * 0.03;
+        const calm = !!input.calm;
+        const tx = input.pointer ? input.pointer.x * 0.42 : (calm ? 0 : Math.sin(t * 0.16) * 0.28);
+        const ty = input.pointer ? input.pointer.y * 0.1 : (calm ? 0 : Math.sin(t * 0.11) * 0.03);
         const k = Math.min(1, dt * 2.2);
         yaw += (tx - yaw) * k;
         pitch += (ty - pitch) * k;
@@ -793,7 +794,7 @@ const BUILDERS = {
         world.rotation.x = pitch;
         // парение
         items.forEach((it) => {
-          const off = Math.sin(t * 0.9 + it.phase) * it.bob;
+          const off = calm ? 0 : Math.sin(t * 0.9 + it.phase) * it.bob;
           it.holder.position.y = it.base + off;
           if (it.sh) {
             const h = Math.max(0, it.holder.position.y);
@@ -802,8 +803,8 @@ const BUILDERS = {
           }
         });
         stack.userData.stones.forEach((s, i) => {
-          s.position.y = s.userData.baseY + i * 0.07 + Math.sin(t * 0.8 + i * 0.9) * 0.028 * i;
-          s.rotation.y += dt * 0.02 * (i % 2 ? 1 : -1);
+          s.position.y = s.userData.baseY + i * 0.07 + (calm ? 0 : Math.sin(t * 0.8 + i * 0.9) * 0.028 * i);
+          if (!calm) s.rotation.y += dt * 0.02 * (i % 2 ? 1 : -1);
         });
         const top = stack.userData.stones[3];
         fl.position.set(top.position.x + 0.1, top.position.y + top.userData.halfHeight + 0.02, top.position.z + 0.05);
